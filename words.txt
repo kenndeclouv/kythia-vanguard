@@ -1,9 +1,3 @@
-# ==========================================
-# KENN-RECON VIP WORDLIST (200+ Highly Curated)
-# Target: Modern Web Stacks, Laravel, DBs & Backups
-# ==========================================
-
-# --- 1. ENVIRONMENT & SECRETS (Paling Bahaya) ---
 .env
 .env.example
 .env.backup
@@ -32,7 +26,6 @@ config.php.bak
 config.php.old
 parameters.yml
 
-# --- 2. VERSION CONTROL LEAKS ---
 .git/config
 .git/HEAD
 .git/logs/HEAD
@@ -45,7 +38,6 @@ parameters.yml
 .bzr/README
 .hg/requires
 
-# --- 3. LARAVEL & PHP SPECIFICS ---
 composer.json
 composer.lock
 package.json
@@ -72,7 +64,6 @@ _profiler/phpinfo
 livewire/livewire.js
 livewire/livewire.js.map
 
-# --- 4. DATABASE & SQLITE DUMPS ---
 database.sqlite
 database.db
 database.sqlite3
@@ -103,7 +94,6 @@ db/
 mysql/
 sql/
 
-# --- 5. COMMON BACKUPS & ARCHIVES (Sisa Deploy) ---
 backup.zip
 backup.tar.gz
 backup.rar
@@ -136,7 +126,6 @@ backup_2024.zip
 backup_2025.zip
 backup_2026.zip
 
-# --- 6. ADMIN PANELS & DASHBOARDS ---
 admin
 admin/
 admin/login
@@ -166,7 +155,6 @@ install
 install.php
 setup.php
 
-# --- 6.5. SPECIFIC PANEL BACKUPS (Sisa Deploy) ---
 backup/cyberpanel
 backup/froxlor
 backup/hpanel
@@ -203,7 +191,6 @@ backup/xpanel
 backup/openlitespeed
 backup/solusvm
 
-# --- 7. SERVER LOGS & MISC ---
 error_log
 error.log
 access_log
@@ -241,7 +228,6 @@ apache2.conf
 httpd.conf
 php.ini
 
-# --- 8. INFRASTRUCTURE & PANEL SPECIFICS ---
 .pteroignore
 pterodactyl.conf
 wings.conf
@@ -261,7 +247,6 @@ uploads/
 images/
 downloads/
 
-# --- 9. TESTING & DEV LEAKS ---
 test
 test/
 test.html
@@ -278,7 +263,6 @@ backup
 _backup
 ~backup
 
-# --- 10. COMMON EXTENSION VARIATIONS ---
 index.php.bak
 index.php.old
 index.php~
@@ -291,7 +275,6 @@ index.html.old
 .psql_history
 .viminfo
 
-# --- 11. SISA DEPLOY PANEL LOGS & SPECIFIC FILES ---
 pterodactyl.log
 wings.log
 panel.log

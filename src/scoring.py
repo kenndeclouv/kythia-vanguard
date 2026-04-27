@@ -37,8 +37,10 @@ def calculate_score(result: ScanResult) -> int:
 
     # Fuzzing hits
     for f in result.fuzzing:
-        if   f["severity"] == "high":   score -= 10
-        elif f["severity"] == "medium": score -= 3
+        if f["severity"] == "high":
+            score -= 10
+        elif f["severity"] == "medium":
+            score -= 3
 
     # Exposed dangerous ports
     for p in result.open_ports:
@@ -53,9 +55,12 @@ def calculate_score(result: ScanResult) -> int:
     # v2: CVE findings
     for cve in result.cve_findings:
         sev = cve.get("severity", "LOW")
-        if   sev == "CRITICAL": score -= 15
-        elif sev == "HIGH":     score -= 8
-        elif sev == "MEDIUM":   score -= 3
+        if sev == "CRITICAL":
+            score -= 15
+        elif sev == "HIGH":
+            score -= 8
+        elif sev == "MEDIUM":
+            score -= 3
 
     # v2: Breach data
     if any(e.get("pwned") for e in result.osint_breach.get("checked_emails", [])):

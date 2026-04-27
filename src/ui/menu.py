@@ -12,17 +12,19 @@ from rich.rule import Rule
 
 from src.config import console, SCAN_MODULES, rate_limiter
 
-PTK_STYLE = PtkStyle.from_dict({
-    "dialog":             "bg:#0d1117 #c9d1d9",
-    "dialog frame.label": "bg:#161b22 bold #58a6ff",
-    "dialog.body":        "bg:#0d1117 #c9d1d9",
-    "dialog shadow":      "bg:#010409",
-    "radio-list":         "bg:#0d1117",
-    "radio":              "#8b949e",
-    "radio-checked":      "bold #58a6ff",
-    "button":             "bg:#21262d #c9d1d9",
-    "button.focused":     "bg:#388bfd bold #ffffff",
-})
+PTK_STYLE = PtkStyle.from_dict(
+    {
+        "dialog": "bg:#0d1117 #c9d1d9",
+        "dialog frame.label": "bg:#161b22 bold #58a6ff",
+        "dialog.body": "bg:#0d1117 #c9d1d9",
+        "dialog shadow": "bg:#010409",
+        "radio-list": "bg:#0d1117",
+        "radio": "#8b949e",
+        "radio-checked": "bold #58a6ff",
+        "button": "bg:#21262d #c9d1d9",
+        "button.focused": "bg:#388bfd bold #ffffff",
+    }
+)
 
 
 def interactive_menu() -> tuple[str, list[str]]:
@@ -57,9 +59,9 @@ def interactive_menu() -> tuple[str, list[str]]:
         title="Rate Limit (requests / second)",
         text="Choose scan aggressiveness (lower = safer for the target):",
         values=[
-            (2,   "Gentle   —  2 req/s  (recommended for production)"),
-            (5,   "Normal   —  5 req/s  (balanced)"),
-            (10,  "Fast     — 10 req/s  (use only on your own infra)"),
+            (2, "Gentle   —  2 req/s  (recommended for production)"),
+            (5, "Normal   —  5 req/s  (balanced)"),
+            (10, "Fast     — 10 req/s  (use only on your own infra)"),
             (100, "BRUTAL   — 100 req/s (insanely crazy - may crash servers)"),
         ],
         style=PTK_STYLE,

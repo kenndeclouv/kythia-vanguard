@@ -18,13 +18,12 @@ def export_results(result: ScanResult, target: str) -> tuple[str, str]:
     os.makedirs("reports", exist_ok=True)
 
     safe_name = (
-        target
-        .replace("https://", "")
-        .replace("http://",  "")
+        target.replace("https://", "")
+        .replace("http://", "")
         .replace("/", "_")
         .replace(":", "_")
     )
-    ts   = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     base = os.path.join("reports", f"{safe_name}_{ts}")
 
     # ── JSON
@@ -56,9 +55,13 @@ def export_results(result: ScanResult, target: str) -> tuple[str, str]:
             fh.write(f"- **{p}** (matched: {', '.join(h)})\n")
 
         # Security headers
-        fh.write("\n## Security Headers\n\n| Header | Present | Value |\n|---|---|---|\n")
+        fh.write(
+            "\n## Security Headers\n\n| Header | Present | Value |\n|---|---|---|\n"
+        )
         for hdr, info in result.security_headers.items():
-            fh.write(f"| {hdr} | {'✓' if info['present'] else '✗'} | {info.get('value','')} |\n")
+            fh.write(
+                f"| {hdr} | {'✓' if info['present'] else '✗'} | {info.get('value', '')} |\n"
+            )
 
         # TLS
         fh.write("\n## TLS / SSL\n\n| Field | Value |\n|---|---|\n")
@@ -70,15 +73,23 @@ def export_results(result: ScanResult, target: str) -> tuple[str, str]:
         if result.fuzzing:
             fh.write("| Severity | Status | Path |\n|---|---|---|\n")
             for f in result.fuzzing:
-                fh.write(f"| {f['severity'].upper()} | {f['status']} | `{f['path']}` |\n")
+                fh.write(
+                    f"| {f['severity'].upper()} | {f['status']} | `{f['path']}` |\n"
+                )
 
         # Forms
         fh.write(f"\n## Forms ({len(result.forms)} found)\n\n")
         for form in result.forms:
-            fh.write(f"### Form #{form['form_num']} — {form['method']} → {form['action']}\n")
-            fh.write(f"- CSRF token: {'✓ Present' if form['has_csrf'] else '✗ Missing'}\n")
+            fh.write(
+                f"### Form #{form['form_num']} — {form['method']} → {form['action']}\n"
+            )
+            fh.write(
+                f"- CSRF token: {'✓ Present' if form['has_csrf'] else '✗ Missing'}\n"
+            )
             fh.write(f"- Risk: {form['risk'].upper()}\n")
-            fh.write(f"- Inputs: {', '.join(i['name'] for i in form['inputs'] if i['name'])}\n\n")
+            fh.write(
+                f"- Inputs: {', '.join(i['name'] for i in form['inputs'] if i['name'])}\n\n"
+            )
 
         # Open ports
         fh.write(f"\n## Open Ports ({len(result.open_ports)} found)\n\n")
@@ -89,7 +100,7 @@ def export_results(result: ScanResult, target: str) -> tuple[str, str]:
                 note = "⚠ Dangerous" if p["port"] in dangerous_ports else "OK"
                 fh.write(
                     f"| {p['port']} | {p['service']} "
-                    f"| {p.get('banner','')[:60]} | {note} |\n"
+                    f"| {p.get('banner', '')[:60]} | {note} |\n"
                 )
 
         # OSINT
@@ -97,7 +108,9 @@ def export_results(result: ScanResult, target: str) -> tuple[str, str]:
         for k, v in result.osint_asn.items():
             fh.write(f"- **{k}**: {v}\n")
 
-        fh.write(f"\n### Wayback Machine ({len(result.osint_wayback)} interesting URLs)\n\n")
+        fh.write(
+            f"\n### Wayback Machine ({len(result.osint_wayback)} interesting URLs)\n\n"
+        )
         for url in result.osint_wayback:
             fh.write(f"- {url}\n")
 
@@ -109,18 +122,20 @@ def export_results(result: ScanResult, target: str) -> tuple[str, str]:
         fh.write("\n## CVE Intelligence\n\n### CMS / Framework Detection\n\n")
         for cms, info in result.cms_detected.items():
             fh.write(
-                f"- **{cms}** — version: {info.get('version','?')} "
-                f"(confidence: {info.get('confidence','?')}%)\n"
+                f"- **{cms}** — version: {info.get('version', '?')} "
+                f"(confidence: {info.get('confidence', '?')}%)\n"
             )
 
         fh.write(f"\n### CVE Findings ({len(result.cve_findings)} matched)\n\n")
         if result.cve_findings:
-            fh.write("| CVE ID | Product | Version | CVSS v3 | Severity | Port |\n"
-                     "|---|---|---|---|---|---|\n")
+            fh.write(
+                "| CVE ID | Product | Version | CVSS v3 | Severity | Port |\n"
+                "|---|---|---|---|---|---|\n"
+            )
             for cve in result.cve_findings:
                 fh.write(
                     f"| {cve['cve_id']} | {cve['product']} | {cve['version']} | "
-                    f"{cve.get('cvss_v3','?')} | {cve['severity']} | {cve.get('port','?')} |\n"
+                    f"{cve.get('cvss_v3', '?')} | {cve['severity']} | {cve.get('port', '?')} |\n"
                 )
 
         # Deep crawler

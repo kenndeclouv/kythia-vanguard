@@ -20,7 +20,6 @@ pip-delete-this-directory.txt
 # ==========================================
 reports/
 *.json
-*.md
 !README.md 
 
 # ==========================================
@@ -40,3 +39,5 @@ secrets.yml
 *.swo
 .DS_Store
 Thumbs.db
+.ruff_cache/
+*_cache/

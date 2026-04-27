@@ -5,43 +5,69 @@ src/modules/cve.py — Module 8: CVE intelligence via banner grabbing + NVD NIST
 import re
 import time
 
-from src.config import rate_limiter, SESSION, TIMEOUT
+from rich import box
+from rich.markup import escape
+from rich.rule import Rule
+from rich.table import Table
+
+
+from src.config import console, C, rate_limiter, SESSION, TIMEOUT
 from src.models import ScanResult
+from src.ui.display import _severity_style
 
 # ── CMS fingerprinting signatures
 CMS_SIGNATURES: dict[str, dict] = {
     "WordPress": {
-        "paths":   ["/wp-login.php", "/wp-admin/", "/wp-content/", "/wp-includes/"],
-        "headers": {"x-powered-by": ""},
-        "meta":    ["generator.*wordpress"],
-        "body":    ["wp-content", "wp-includes", "WordPress"],
+        "paths": ["/wp-login.php", "/wp-admin/", "/wp-content/", "/wp-includes/"],
+        "meta": ["generator.*wordpress"],
+        "body": ["wp-content", "wp-includes", "WordPress"],
     },
     "Joomla": {
-        "paths":   ["/administrator/", "/components/", "/modules/"],
-        "meta":    ["generator.*joomla"],
-        "body":    ["/components/com_", "Joomla"],
+        "paths": ["/administrator/", "/components/", "/modules/"],
+        "meta": ["generator.*joomla"],
+        "body": ["/components/com_", "Joomla"],
     },
     "Drupal": {
-        "paths":   ["/sites/default/", "/modules/", "/themes/"],
+        "paths": ["/sites/default/", "/modules/", "/themes/"],
         "headers": {"x-generator": "drupal"},
-        "meta":    ["generator.*drupal"],
-        "body":    ["Drupal.settings", "/sites/all/"],
+        "meta": ["generator.*drupal"],
+        "body": ["Drupal.settings", "/sites/all/"],
     },
     "Django": {
-        "headers": {"server": ""},
-        "body":    ["csrfmiddlewaretoken", "__admin__"],
+        "headers": {"server": "wsgiserver"},
+        "body": ["csrfmiddlewaretoken", 'name="csrfmiddlewaretoken"'],
     },
     "Laravel": {
-        "body":    ["laravel_session", "XSRF-TOKEN"],
-        "headers": {"set-cookie": "laravel"},
+        "body": ["laravel_session", "XSRF-TOKEN"],
+        "headers": {"set-cookie": ["laravel_session", "XSRF-TOKEN"]},
+    },
+    "Laravel Livewire": {
+        "body": [
+            "livewire.js",
+            "wire:id",
+            "wire:model",
+            "window.livewire",
+            "wire:snapshot",
+        ],
     },
     "Spring Boot": {
-        "paths":   ["/actuator", "/actuator/health"],
-        "headers": {"x-application-context": ""},
+        "paths": ["/actuator", "/actuator/health"],
+        "headers": {"x-application-context": "application"},
     },
     "Next.js": {
         "headers": {"x-powered-by": "next.js"},
-        "body":    ["__NEXT_DATA__", "_next/static"],
+        "body": ["__NEXT_DATA__", "_next/static", "next/router"],
+    },
+    "React": {
+        "body": [
+            "data-reactroot",
+            "_reactRootContainer",
+            "react.development.js",
+            "react-dom",
+        ],
+    },
+    "Vue.js": {
+        "body": ["data-v-", "vue.js", "vue.min.js", "window.__VUE__"],
     },
     "Nginx": {
         "headers": {"server": "nginx"},
@@ -53,20 +79,20 @@ CMS_SIGNATURES: dict[str, dict] = {
 
 # Product → NVD CPE keyword mapping for CVE searches
 PRODUCT_CPE_MAP: dict[str, str] = {
-    "nginx":           "nginx",
-    "apache":          "apache_http_server",
-    "wordpress":       "wordpress",
-    "joomla":          "joomla",
-    "drupal":          "drupal",
-    "django":          "django",
-    "spring boot":     "spring_boot",
-    "openssl":         "openssl",
-    "openssh":         "openssh",
-    "mysql":           "mysql",
-    "postgresql":      "postgresql",
-    "redis":           "redis",
-    "mongodb":         "mongodb",
-    "elasticsearch":   "elasticsearch",
+    "nginx": "nginx",
+    "apache": "apache_http_server",
+    "wordpress": "wordpress",
+    "joomla": "joomla",
+    "drupal": "drupal",
+    "django": "django",
+    "spring boot": "spring_boot",
+    "openssl": "openssl",
+    "openssh": "openssh",
+    "mysql": "mysql",
+    "postgresql": "postgresql",
+    "redis": "redis",
+    "mongodb": "mongodb",
+    "elasticsearch": "elasticsearch",
 }
 
 # Regex patterns to extract version strings from service banners
@@ -95,12 +121,14 @@ def _parse_banner_versions(banners: dict) -> list[dict]:
                     banner,
                 )
                 product = pm.group(1).lower() if pm else "unknown"
-                found.append({
-                    "port":    port,
-                    "product": product,
-                    "version": m.group(1),
-                    "banner":  banner[:200],
-                })
+                found.append(
+                    {
+                        "port": port,
+                        "product": product,
+                        "version": m.group(1),
+                        "banner": banner[:200],
+                    }
+                )
     return found
 
 
@@ -113,42 +141,53 @@ def _lookup_nvd_cves(product: str, version: str) -> list[dict]:
         r = SESSION.get(
             "https://services.nvd.nist.gov/rest/json/cves/2.0",
             params={
-                "keywordSearch":  f"{keyword} {version}",
+                "keywordSearch": f"{keyword} {version}",
                 "resultsPerPage": 10,
-                "startIndex":     0,
+                "startIndex": 0,
             },
             timeout=15,
             headers={"Accept": "application/json"},
         )
         if r.ok:
             for item in r.json().get("vulnerabilities", []):
-                cve      = item.get("cve", {})
-                cve_id   = cve.get("id", "")
-                metrics  = cve.get("metrics", {})
-                cvss_v3  = (
-                    metrics.get("cvssMetricV31", [{}])[0].get("cvssData", {}).get("baseScore")
-                    or metrics.get("cvssMetricV30", [{}])[0].get("cvssData", {}).get("baseScore")
+                cve = item.get("cve", {})
+                cve_id = cve.get("id", "")
+                metrics = cve.get("metrics", {})
+                cvss_v3 = metrics.get("cvssMetricV31", [{}])[0].get("cvssData", {}).get(
+                    "baseScore"
+                ) or metrics.get("cvssMetricV30", [{}])[0].get("cvssData", {}).get(
+                    "baseScore"
                 )
                 if cvss_v3:
-                    if   cvss_v3 >= 9.0: severity = "CRITICAL"
-                    elif cvss_v3 >= 7.0: severity = "HIGH"
-                    elif cvss_v3 >= 4.0: severity = "MEDIUM"
-                    else:                severity = "LOW"
+                    if cvss_v3 >= 9.0:
+                        severity = "CRITICAL"
+                    elif cvss_v3 >= 7.0:
+                        severity = "HIGH"
+                    elif cvss_v3 >= 4.0:
+                        severity = "MEDIUM"
+                    else:
+                        severity = "LOW"
                 else:
                     severity = "UNKNOWN"
 
                 desc = next(
-                    (d["value"] for d in cve.get("descriptions", []) if d.get("lang") == "en"),
+                    (
+                        d["value"]
+                        for d in cve.get("descriptions", [])
+                        if d.get("lang") == "en"
+                    ),
                     "No description available",
                 )
-                cves.append({
-                    "cve_id":      cve_id,
-                    "product":     product,
-                    "version":     version,
-                    "cvss_v3":     cvss_v3,
-                    "severity":    severity,
-                    "description": desc[:300],
-                })
+                cves.append(
+                    {
+                        "cve_id": cve_id,
+                        "product": product,
+                        "version": version,
+                        "cvss_v3": cvss_v3,
+                        "severity": severity,
+                        "description": desc[:300],
+                    }
+                )
     except Exception:
         pass
     return cves
@@ -170,7 +209,8 @@ def _fingerprint_cms(
         for pat in sigs.get("meta", []):
             m = re.search(
                 r'<meta[^>]+name=["\']generator["\'][^>]*content=["\']([^"\']*)["\']',
-                resp_body, re.IGNORECASE,
+                resp_body,
+                re.IGNORECASE,
             )
             if m and re.search(pat, m.group(1), re.IGNORECASE):
                 score += 3
@@ -189,7 +229,7 @@ def _fingerprint_cms(
     # Standalone server product/version from Server header
     srv = headers_lower.get("server", "")
     if srv:
-        ver_m     = re.search(r"(\d+\.\d+\.?\d*)", srv)
+        ver_m = re.search(r"(\d+\.\d+\.?\d*)", srv)
         product_m = re.search(r"(?i)(nginx|apache|iis|lighttpd|gunicorn|uvicorn)", srv)
         if product_m:
             pname = product_m.group(1)
@@ -221,10 +261,12 @@ def run_cve_intelligence(
     try:
         resp = SESSION.get(target_url, timeout=TIMEOUT, allow_redirects=True)
         if resp.ok:
-            body          = resp.text
+            body = resp.text
             headers_lower = {k.lower(): v for k, v in resp.headers.items()}
 
-            result.cms_detected = _fingerprint_cms(target_url, hostname, body, headers_lower)
+            result.cms_detected = _fingerprint_cms(
+                target_url, hostname, body, headers_lower
+            )
 
             # Also extract from Server header if not already captured
             srv = headers_lower.get("server", "")
@@ -237,10 +279,10 @@ def run_cve_intelligence(
                         )
                         if pm:
                             entry = {
-                                "port":    443,
+                                "port": 443,
                                 "product": pm.group(1).lower(),
                                 "version": m.group(1),
-                                "banner":  srv,
+                                "banner": srv,
                             }
                             if entry not in banner_products:
                                 banner_products.append(entry)
@@ -256,8 +298,72 @@ def run_cve_intelligence(
         for cve in cves:
             cve["port"] = bp["port"]
         all_cves.extend(cves)
-        time.sleep(0.7)   # NVD rate limit: ~5 req/30 s without an API key
+        time.sleep(0.7)  # NVD rate limit: ~5 req/30 s without an API key
 
-    all_cves.sort(key=lambda c: (c.get("cvss_v3") or 0), reverse=True)
+    all_cves.sort(key=lambda c: c.get("cvss_v3") or 0, reverse=True)
     result.cve_findings = all_cves[:30]
     progress.advance(task, 30)
+
+
+def display_cve(result: ScanResult) -> None:
+    console.print(
+        Rule(
+            f"[{C['accent']}]🔬  CVE INTELLIGENCE LAYER[/{C['accent']}]",
+            style="magenta",
+        )
+    )
+
+    # ── CMS Detection
+    console.print(Rule("[bold]CMS / Framework Fingerprinting[/bold]", style="dim"))
+    if result.cms_detected:
+        cms_t = Table(box=box.ROUNDED, border_style="cyan", header_style=C["head"])
+        cms_t.add_column("CMS / Platform", style=C["info"], width=20)
+        cms_t.add_column("Version Detected", style="white", width=18)
+        cms_t.add_column("Confidence", style=C["warn"], width=14)
+        for cms, info in result.cms_detected.items():
+            cms_t.add_row(
+                cms, info.get("version", "unknown"), f"{info.get('confidence', '?')}%"
+            )
+        console.print(cms_t)
+    else:
+        console.print("  [dim]No CMS fingerprints detected.[/dim]")
+    console.print()
+
+    # ── CVE Findings
+    console.print(Rule("[bold]CVE Matches (via NVD/NIST API)[/bold]", style="dim"))
+    if not result.cve_findings:
+        console.print(
+            "  [dim]No CVEs matched. (No banner data or no matching NVD entries.)[/dim]"
+        )
+        console.print(
+            "  [dim]Tip: Run port scan first so banners can be grabbed.[/dim]"
+        )
+        console.print()
+        return
+
+    cve_t = Table(
+        box=box.DOUBLE_EDGE, border_style="red", header_style=C["head"], show_lines=True
+    )
+    cve_t.add_column("CVE ID", style=C["bad"], width=16)
+    cve_t.add_column("Product", style=C["info"], width=14)
+    cve_t.add_column("Version", style="white", width=10)
+    cve_t.add_column("CVSS v3", width=10, justify="center")
+    cve_t.add_column("Severity", width=12, justify="center")
+    cve_t.add_column("Port", width=6, justify="right")
+    cve_t.add_column("Description", style=C["dim"])
+
+    for cve in result.cve_findings:
+        sev = cve.get("severity", "UNKNOWN")
+        sev_st = _severity_style(sev)
+        cvss = str(cve.get("cvss_v3", "?")) if cve.get("cvss_v3") else "?"
+        cve_t.add_row(
+            escape(cve["cve_id"]),
+            escape(cve.get("product", "?")),
+            escape(cve.get("version", "?")),
+            cvss,
+            f"[{sev_st}]{sev}[/{sev_st}]",
+            str(cve.get("port", "?")),
+            escape(cve["description"][:100]),
+        )
+    console.print(cve_t)
+    console.print()
