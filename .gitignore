@@ -1,0 +1,42 @@
+# ==========================================
+# Python & Bytecode
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# ==========================================
+# Virtual Environments
+# ==========================================
+venv/
+env/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# ==========================================
+# KENN-RECON Specific
+# ==========================================
+reports/
+*.json
+*.md
+!README.md 
+
+# ==========================================
+# Secrets & Environment Variables
+# ==========================================
+.env
+.env.local
+.env.*.local
+secrets.yml
+
+# ==========================================
+# IDE, Editor, & OS Files
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
