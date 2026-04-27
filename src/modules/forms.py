@@ -13,6 +13,7 @@ from rich.text import Text
 from src.config import console, C, rate_limiter, SESSION, TIMEOUT
 from src.models import ScanResult
 from src.ui.display import _severity_style
+from src.scoring import score_and_report
 
 from bs4 import BeautifulSoup
 
@@ -79,6 +80,18 @@ def run_form_audit(target_url: str, result: ScanResult, progress, task) -> None:
 
     result.forms = forms_found
     progress.advance(task, 50)
+    score_and_report(result, "forms")
+
+
+def score_forms(result):
+    if not result.forms:
+        return 100
+    post_forms = [f for f in result.forms if f.get("method") == "POST"]
+    if not post_forms:
+        return 100
+    without_csrf = sum(1 for f in post_forms if not f.get("has_csrf"))
+    deduct = int((without_csrf / max(len(post_forms), 1)) * 60)
+    return max(0, 100 - deduct)
 
 
 def display_forms(result: ScanResult) -> None:
@@ -124,3 +137,13 @@ def display_forms(result: ScanResult) -> None:
         )
         console.print(inp_t)
         console.print()
+
+
+def export_forms(result: ScanResult, W: callable) -> None:
+    W(f"## 📝 Forms ({len(result.forms)} found)\n\n")
+    for form in result.forms:
+        W(f"### Form #{form['form_num']} — `{form['method']}` → `{form['action']}`\n")
+        W(f"- CSRF: {'✓ Present' if form['has_csrf'] else '✗ Missing'}\n")
+        W(f"- Risk: **{form['risk'].upper()}**\n")
+        inputs = ", ".join(i["name"] for i in form["inputs"] if i["name"])
+        W(f"- Inputs: `{inputs}`\n\n")

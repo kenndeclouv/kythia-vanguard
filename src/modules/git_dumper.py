@@ -27,6 +27,7 @@ from rich.table import Table
 
 from src.config import SESSION, rate_limiter, TIMEOUT, console, C
 from src.models import ScanResult
+from src.scoring import score_and_report
 
 # ─────────────────────────────────────────────────────────────────
 # Known static git files to always fetch
@@ -384,11 +385,16 @@ def run_git_dumper(
         )
     )
     progress.update(task, completed=50)
+    score_and_report(result, "git_dumper")
 
 
 # ─────────────────────────────────────────────────────────────────
 # Display function
 # ─────────────────────────────────────────────────────────────────
+
+
+def score_git_dumper(result):
+    return 0 if result.git_findings else 100
 
 
 def display_git_dumper(result: ScanResult) -> None:
@@ -431,3 +437,11 @@ def display_git_dumper(result: ScanResult) -> None:
         console.print(tbl)
 
     console.print()
+
+
+def export_git_dumper(result: ScanResult, W: callable) -> None:
+    if result.git_findings:
+        W("## 📦 Git Dumper\n\n")
+        for k, v in result.git_findings.items():
+            W(f"- **{k}**: {v}\n")
+        W("\n")

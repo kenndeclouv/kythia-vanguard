@@ -14,6 +14,7 @@ Vulnerability classes detected:
 """
 
 from __future__ import annotations
+from src.export import md_table
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
@@ -25,6 +26,7 @@ from rich.table import Table
 
 from src.config import SESSION, RateLimiter, TIMEOUT, console, C
 from src.models import ScanResult
+from src.scoring import score_and_report
 
 _rl = RateLimiter(rps=15.0, use_jitter=False)
 
@@ -182,11 +184,20 @@ def run_cors(
 
     result.cors_findings = unique
     progress.update(task, completed=50)
+    score_and_report(result, "cors")
 
 
 # ─────────────────────────────────────────────────────────────────
 # Display function
 # ─────────────────────────────────────────────────────────────────
+
+
+def score_cors(result):
+    if not result.cors_findings:
+        return 100
+    _sev = {"critical": 30, "high": 20, "medium": 10, "low": 4}
+    deduct = sum(_sev.get(c.get("severity", "low"), 4) for c in result.cors_findings)
+    return max(0, 100 - min(deduct, 80))
 
 
 def display_cors(result: ScanResult) -> None:
@@ -225,3 +236,21 @@ def display_cors(result: ScanResult) -> None:
 
     console.print(tbl)
     console.print()
+
+
+def export_cors(result: ScanResult, W: callable) -> None:
+    if result.cors_findings:
+        W(f"### 🌍 CORS Misconfiguration ({len(result.cors_findings)} issues)\n\n")
+        rows = [
+            [
+                f.get("url", "?"),
+                f.get("origin_tested", "?"),
+                f.get("acao", "?"),
+                f.get("severity", "?").upper(),
+            ]
+            for f in result.cors_findings
+        ]
+        W(md_table(["URL", "Origin Tested", "ACAO Header", "Severity"], rows))
+        W("\n")
+    else:
+        W("### 🌍 CORS Misconfiguration\n\n- ✅ No CORS issues found.\n\n")

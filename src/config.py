@@ -180,4 +180,8 @@ SCAN_MODULES = [
         "oauth",
         "OAuth Manipulator    — Steal tokens via Open Redirect · Missing state CSRF",
     ),
+    (
+        "cf_bypass",
+        "CF Bypass Research   — Origin IP leak · Header injection · Direct bypass probe",
+    ),
 ]

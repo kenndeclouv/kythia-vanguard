@@ -3,6 +3,7 @@ src/modules/cve.py — Module 8: CVE intelligence via banner grabbing + NVD NIST
 """
 
 import re
+from src.export import md_table
 import time
 
 from rich import box
@@ -14,6 +15,7 @@ from rich.table import Table
 from src.config import console, C, rate_limiter, SESSION, TIMEOUT
 from src.models import ScanResult
 from src.ui.display import _severity_style
+from src.scoring import score_and_report
 
 # ── CMS fingerprinting signatures
 CMS_SIGNATURES: dict[str, dict] = {
@@ -303,6 +305,15 @@ def run_cve_intelligence(
     all_cves.sort(key=lambda c: c.get("cvss_v3") or 0, reverse=True)
     result.cve_findings = all_cves[:30]
     progress.advance(task, 30)
+    score_and_report(result, "cve")
+
+
+def score_cve(result):
+    if not result.cve_findings:
+        return 100
+    _d = {"CRITICAL": 25, "HIGH": 15, "MEDIUM": 6, "LOW": 2}
+    deduct = sum(_d.get(c.get("severity", "LOW"), 2) for c in result.cve_findings)
+    return max(0, 100 - min(deduct, 90))
 
 
 def display_cve(result: ScanResult) -> None:
@@ -367,3 +378,34 @@ def display_cve(result: ScanResult) -> None:
         )
     console.print(cve_t)
     console.print()
+
+
+def export_cve(result: ScanResult, W: callable) -> None:
+    W("## 🦠 CVE Intelligence\n\n")
+    if result.cms_detected:
+        W("### CMS / Framework Detection\n\n")
+        for cms, info in result.cms_detected.items():
+            W(
+                f"- **{cms}** v{info.get('version', '?')} (confidence: {info.get('confidence', '?')}%)\n"
+            )
+        W("\n")
+    if result.cve_findings:
+        W(f"### CVE Findings ({len(result.cve_findings)} matched)\n\n")
+        rows = [
+            [
+                c["cve_id"],
+                c["product"],
+                c["version"],
+                c.get("cvss_v3", "?"),
+                c["severity"],
+                c.get("port", "?"),
+            ]
+            for c in result.cve_findings
+        ]
+        W(
+            md_table(
+                ["CVE ID", "Product", "Version", "CVSS v3", "Severity", "Port"],
+                rows,
+            )
+        )
+    W("\n")

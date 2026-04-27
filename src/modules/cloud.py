@@ -16,6 +16,7 @@ from typing import List
 
 from src.config import SESSION, rate_limiter, TIMEOUT, console, C
 from src.models import ScanResult
+from src.scoring import score_and_report
 
 # Simple built‑in wordlist – can be extended via optional external list
 _BUILTIN_BUCKET_WORDS = [
@@ -112,6 +113,15 @@ def run_cloud(hostname: str, result: ScanResult, progress, task) -> None:
 
 
 # Display function
+    score_and_report(result, "cloud")
+
+
+def score_cloud(result):
+    if not result.cloud_findings:
+        return 100
+    return max(0, 100 - min(len(result.cloud_findings) * 20, 80))
+
+
 def display_cloud(result: ScanResult) -> None:
     console.print(
         Rule(
@@ -140,3 +150,22 @@ def display_cloud(result: ScanResult) -> None:
 
             console.print(Panel(Text.from_markup(panel_content), border_style="green"))
     console.print()
+
+
+def export_cloud(result: ScanResult, W: callable) -> None:
+    W("## ☁️ Cloud & Bucket Sniper\n\n")
+    if not result.cloud_findings:
+        W("- ✅ No public cloud buckets discovered.\n\n")
+        return
+
+    for bucket in result.cloud_findings:
+        if bucket.get("public"):
+            W(f"### Public Bucket Found: `{bucket.get('url', '')}`\n\n")
+            objects = bucket.get("objects", [])
+            if objects:
+                W(f"**Files Found ({len(objects)} max 20):**\n")
+                for obj in objects:
+                    W(f"- {obj}\n")
+            else:
+                W("- *No accessible files listed.*\n")
+    W("\n")

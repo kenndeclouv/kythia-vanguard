@@ -19,8 +19,22 @@ from rich.markup import escape
 
 from src.config import SESSION, console
 from src.models import ScanResult
+from src.scoring import score_and_report
 
-_LFI_PARAMS = {"file", "page", "doc", "dir", "path", "folder", "include", "template", "view", "show", "document", "layout"}
+_LFI_PARAMS = {
+    "file",
+    "page",
+    "doc",
+    "dir",
+    "path",
+    "folder",
+    "include",
+    "template",
+    "view",
+    "show",
+    "document",
+    "layout",
+}
 
 _PAYLOADS = [
     # Linux
@@ -52,13 +66,22 @@ def _build_url(url: str, param_name: str, payload: str) -> str:
             new_qs.append((k, v))
     new_query = urlencode(new_qs)
     return urlunparse(
-        (parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment)
+        (
+            parsed.scheme,
+            parsed.netloc,
+            parsed.path,
+            parsed.params,
+            new_query,
+            parsed.fragment,
+        )
     )
 
 
 def run_lfi(target_url: str, hostname: str, result: ScanResult, progress, task) -> None:
     """Hunt for LFI / Path Traversal vulnerabilities."""
-    progress.update(task, description="[cyan]LFI Sniper:[/cyan] Checking harvested parameters…")
+    progress.update(
+        task, description="[cyan]LFI Sniper:[/cyan] Checking harvested parameters…"
+    )
 
     findings = []
     parameters = getattr(result, "parameters", {})
@@ -79,29 +102,31 @@ def run_lfi(target_url: str, hostname: str, result: ScanResult, progress, task) 
     for url, param in target_params:
         for payload in _PAYLOADS:
             test_url = _build_url(url, param, payload)
-            
+
             completed_checks += 1
             progress.update(
-                task, 
+                task,
                 description=f"[cyan]LFI Sniper:[/cyan] {completed_checks}/{total_checks} — Testing {param} parameter…",
-                completed=(completed_checks / total_checks) * 100
+                completed=(completed_checks / total_checks) * 100,
             )
 
             try:
                 # Use a short timeout, LFI is usually immediate if vulnerable
                 r = SESSION.get(test_url, timeout=5, allow_redirects=True)
-                
+
                 # Check signatures
                 for sig_regex, file_name in _SIGNATURES:
                     if sig_regex.search(r.text):
-                        findings.append({
-                            "url": test_url,
-                            "parameter": param,
-                            "payload": payload,
-                            "file_accessed": file_name,
-                            "severity": "critical"
-                        })
-                        
+                        findings.append(
+                            {
+                                "url": test_url,
+                                "parameter": param,
+                                "payload": payload,
+                                "file_accessed": file_name,
+                                "severity": "critical",
+                            }
+                        )
+
                         progress.console.print(
                             Panel(
                                 f"[bold red]CRITICAL LFI DETECTED![/bold red]\n\n"
@@ -110,16 +135,17 @@ def run_lfi(target_url: str, hostname: str, result: ScanResult, progress, task) 
                                 f"  [bold]Target   :[/bold] [cyan]{test_url}[/cyan]\n"
                                 f"  [bold]Extracted:[/bold] {file_name}",
                                 title="[bold red blink]☠ LFI / PATH TRAVERSAL ☠[/bold red blink]",
-                                border_style="red"
+                                border_style="red",
                             )
                         )
-                        break # Stop testing this URL/param combo if already proven vulnerable
+                        break  # Stop testing this URL/param combo if already proven vulnerable
 
             except Exception:
                 pass
 
     result.lfi_findings = findings
     progress.update(task, completed=100)
+    score_and_report(result, "traversal")
 
 
 def display_lfi(result: ScanResult) -> None:
@@ -129,11 +155,14 @@ def display_lfi(result: ScanResult) -> None:
 
     console.print()
     tbl = Table(
-        "Parameter", "Payload", "File Accessed", "Target URL",
+        "Parameter",
+        "Payload",
+        "File Accessed",
+        "Target URL",
         title="[bold red]📂 Local File Inclusion (LFI)[/bold red]",
         header_style="bold red",
         border_style="red",
-        show_lines=True
+        show_lines=True,
     )
     for f in findings:
         tbl.add_row(
@@ -143,3 +172,17 @@ def display_lfi(result: ScanResult) -> None:
             f"[dim]{escape(f['url'])}[/dim]",
         )
     console.print(tbl)
+
+
+def export_traversal(result: ScanResult, W: callable) -> None:
+    if result.lfi_findings:
+        W("## 📂 Path Traversal / LFI\n\n")
+        for f in result.lfi_findings:
+            W(f"- **Vulnerable**: `{f.get('url', '?')}`\n")
+        W("\n")
+
+
+def score_traversal(result):
+    if not result.lfi_findings:
+        return 100
+    return max(0, 100 - min(len(result.lfi_findings) * 25, 90))

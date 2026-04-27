@@ -9,6 +9,7 @@ Covers:
 """
 
 import re
+from src.export import md_table
 import urllib.parse
 
 from rich.markup import escape
@@ -18,6 +19,7 @@ from rich import box
 
 from src.config import console, C, SESSION, TIMEOUT, HIBP_API_KEY
 from src.models import ScanResult
+from src.scoring import score_and_report
 
 
 def _extract_domain_emails(hostname: str) -> list[str]:
@@ -228,6 +230,17 @@ def run_osint(
             pass
 
     progress.advance(task, 5)
+    score_and_report(result, "osint")
+
+
+def score_osint(result):
+    score = 100
+    if result.osint_breach:
+        if any(e.get("pwned") for e in result.osint_breach.get("checked_emails", [])):
+            score -= 20
+    if len(result.osint_wayback) > 50:
+        score -= 10
+    return max(0, score)
 
 
 def display_osint(result: ScanResult) -> None:
@@ -328,3 +341,19 @@ def display_osint(result: ScanResult) -> None:
     for dork in result.osint_github:
         console.print(f"  [{C['warn']}]❯[/{C['warn']}]  [cyan]{escape(dork)}[/cyan]")
     console.print()
+
+
+def export_osint(result: ScanResult, W: callable) -> None:
+    W("## 🕵️ OSINT Intelligence\n\n")
+    if result.osint_asn:
+        W("### ASN / BGP\n\n")
+        W(md_table(["Field", "Value"], [[k, v] for k, v in result.osint_asn.items()]))
+    if result.osint_wayback:
+        W(f"\n### Wayback Machine ({len(result.osint_wayback)} URLs)\n\n")
+        for url in result.osint_wayback[:50]:
+            W(f"- {url}\n")
+    if result.osint_github:
+        W("\n### GitHub OSINT Dorks\n\n")
+        for dork in result.osint_github:
+            W(f"- `{dork}`\n")
+    W("\n")

@@ -3,6 +3,7 @@ src/modules/fuzzing.py — Module 4: Smart fuzzing + WAF BYPASS MUTATOR.
 """
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from src.export import md_table
 from typing import Optional
 from rich import box
 from rich.markup import escape
@@ -13,6 +14,7 @@ from rich.table import Table
 from src.config import console, C, rate_limiter, SESSION, TIMEOUT
 from src.models import ScanResult
 from src.ui.display import _severity_style
+from src.scoring import score_and_report
 
 try:
     with open("src/wordlists/fuzz.txt") as _f:
@@ -121,6 +123,17 @@ def run_fuzzing(target_url: str, result: ScanResult, progress, task) -> None:
 
     rank = {"critical": 0, "high": 1, "medium": 2, "low": 3, "info": 4}
     result.fuzzing = sorted(findings, key=lambda f: rank.get(f["severity"], 9))
+    score_and_report(result, "fuzzing")
+
+
+def score_fuzzing(result):
+    if not result.fuzzing:
+        return 100
+    deduct = sum(
+        {"high": 15, "medium": 6, "low": 2}.get(f.get("severity", "low"), 2)
+        for f in result.fuzzing
+    )
+    return max(0, 100 - min(deduct, 80))
 
 
 def display_fuzzing(result: ScanResult) -> None:
@@ -154,3 +167,14 @@ def display_fuzzing(result: ScanResult) -> None:
         )
     console.print(t)
     console.print()
+
+
+def export_fuzzing(result: ScanResult, W: callable) -> None:
+    W(f"## 🕵️ Fuzzing ({len(result.fuzzing)} findings)\n\n")
+    if result.fuzzing:
+        rows = [
+            [f["severity"].upper(), f["status"], f"`{f['path']}`"]
+            for f in result.fuzzing
+        ]
+        W(md_table(["Severity", "Status", "Path"], rows))
+    W("\n")

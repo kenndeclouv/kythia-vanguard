@@ -22,6 +22,7 @@ Phase 4 — Flag:
 """
 
 from __future__ import annotations
+from src.export import md_table
 
 import base64
 import hashlib
@@ -37,6 +38,7 @@ from rich.rule import Rule
 
 from src.config import SESSION, RateLimiter, TIMEOUT, console, C
 from src.models import ScanResult
+from src.scoring import score_and_report
 
 _rl = RateLimiter(rps=10.0, use_jitter=False)
 
@@ -308,11 +310,24 @@ def run_jwt_cracker(target_url: str, result: ScanResult, progress, task) -> None
 
     result.jwt_findings = findings
     progress.update(task, completed=50)
+    score_and_report(result, "jwt_cracker")
 
 
 # ─────────────────────────────────────────────────────────────────
 # Display function
 # ─────────────────────────────────────────────────────────────────
+
+
+def score_jwt_cracker(result):
+    if not result.jwt_findings:
+        return 100
+    score = 100
+    for f in result.jwt_findings:
+        if f.get("cracked"):
+            score -= 40
+        elif str(f.get("algorithm", "")).upper() == "NONE":
+            score -= 50
+    return max(0, score)
 
 
 def display_jwt_cracker(result: ScanResult) -> None:
@@ -367,3 +382,22 @@ def display_jwt_cracker(result: ScanResult) -> None:
         )
 
     console.print()
+
+
+def export_jwt_cracker(result: ScanResult, W: callable) -> None:
+    if result.jwt_findings:
+        W(f"### 🔑 JWT Analysis ({len(result.jwt_findings)} tokens)\n\n")
+        rows = [
+            [
+                f.get("url", "?")[:60],
+                f.get("algorithm", "?"),
+                "✓ Cracked" if f.get("cracked") else "✗",
+                f.get("secret", "")[:30] if f.get("cracked") else "N/A",
+                f.get("severity", "info").upper(),
+            ]
+            for f in result.jwt_findings
+        ]
+        W(md_table(["Source URL", "Algorithm", "Cracked?", "Secret", "Severity"], rows))
+        W("\n")
+    else:
+        W("### 🔑 JWT Analysis\n\n- ✅ No JWT vulnerabilities found.\n\n")

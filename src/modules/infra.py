@@ -10,6 +10,7 @@ Scans for dangerously misconfigured infrastructure:
 """
 
 from __future__ import annotations
+from src.export import md_table
 
 import socket
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -23,6 +24,7 @@ from rich.table import Table
 
 from src.config import SESSION, rate_limiter, TIMEOUT, console, C
 from src.models import ScanResult
+from src.scoring import score_and_report
 
 # ─────────────────────────────────────────────────────────────────
 # Target definitions
@@ -272,11 +274,18 @@ def run_infra(
 
     result.infra_findings = findings
     progress.update(task, completed=50)
+    score_and_report(result, "infra")
 
 
 # ─────────────────────────────────────────────────────────────────
 # Display function
 # ─────────────────────────────────────────────────────────────────
+
+
+def score_infra(result):
+    if not result.infra_findings:
+        return 100
+    return max(0, 100 - min(len(result.infra_findings) * 20, 80))
 
 
 def display_infra(result: ScanResult) -> None:
@@ -337,3 +346,23 @@ def display_infra(result: ScanResult) -> None:
                 )
             )
     console.print()
+
+
+def export_infra(result: ScanResult, W: callable) -> None:
+    if result.infra_findings:
+        W(f"### 🐳 Infrastructure Exposure ({len(result.infra_findings)} findings)\n\n")
+        rows = [
+            [
+                f.get("service", "?"),
+                f.get("url", f.get("host", "?")),
+                f.get("severity", "?").upper(),
+                f.get("detail", ""),
+            ]
+            for f in result.infra_findings
+        ]
+        W(md_table(["Service", "URL / Host", "Severity", "Detail"], rows))
+        W("\n")
+    else:
+        W(
+            "### 🐳 Infrastructure Exposure\n\n- ✅ No exposed Docker/Redis/Portainer found.\n\n"
+        )

@@ -9,6 +9,7 @@ from rich.table import Table
 
 from src.config import console, C, rate_limiter, SESSION, TIMEOUT
 from src.models import ScanResult
+from src.scoring import score_and_report
 
 WAF_SIGNATURES: dict[str, dict] = {
     "Cloudflare": {"server": "cloudflare", "cf-ray": ""},
@@ -56,6 +57,11 @@ def run_waf_detection(target_url: str, result: ScanResult, progress, task) -> No
     result.headers = raw_headers
     result.waf_cdn = detected
     progress.advance(task, 50)
+    score_and_report(result, "waf")
+
+
+def score_waf(result):
+    return 100  # detection only, not a vulnerability
 
 
 def display_waf(result: ScanResult) -> None:
@@ -103,3 +109,14 @@ def display_waf(result: ScanResult) -> None:
             hdr_t.add_row(h, escape(str(val)))
     console.print(hdr_t)
     console.print()
+
+
+def export_waf(result: ScanResult, W: callable) -> None:
+    W("## 🛡️ WAF / CDN Detection\n\n")
+    if result.waf_cdn:
+        for p, h in result.waf_cdn.items():
+            matched = ", ".join(h) if isinstance(h, list) else str(h)
+            W(f"- **{p}** (matched: {matched})\n")
+    else:
+        W("- No WAF/CDN detected.\n")
+    W("\n")

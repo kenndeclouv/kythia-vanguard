@@ -3,6 +3,7 @@ src/modules/ports.py — Module 6: TCP port scan with optional banner grabbing.
 """
 
 import socket
+from src.export import md_table
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Optional
 
@@ -13,6 +14,7 @@ from rich.table import Table
 
 from src.config import console, C
 from src.models import ScanResult
+from src.scoring import score_and_report
 
 TOP_PORTS: dict[int, str] = {
     21: "FTP",
@@ -97,6 +99,19 @@ def run_port_scan(hostname: str, result: ScanResult, progress, task) -> None:
 
     result.open_ports = sorted(open_ports, key=lambda p: p["port"])
     result.banners = banners  # consumed by CVE module
+    score_and_report(result, "ports")
+
+
+_DANGEROUS_PORTS_SCORE = {21, 23, 1433, 3306, 3389, 5432, 5900, 6379, 9200, 27017}
+
+
+def score_ports(result):
+    if not result.open_ports:
+        return 100
+    deduct = sum(
+        8 for p in result.open_ports if p.get("port") in _DANGEROUS_PORTS_SCORE
+    )
+    return max(0, 100 - min(deduct, 60))
 
 
 def display_ports(result: ScanResult) -> None:
@@ -133,3 +148,20 @@ def display_ports(result: ScanResult) -> None:
         )
     console.print(t)
     console.print()
+
+
+def export_ports(result: ScanResult, W: callable) -> None:
+    W(f"## 🔌 Open Ports ({len(result.open_ports)} found)\n\n")
+    if result.open_ports:
+        dangerous = {21, 23, 1433, 3306, 3389, 5432, 5900, 6379, 9200, 27017}
+        rows = [
+            [
+                p["port"],
+                p["service"],
+                p.get("banner", "")[:60],
+                "⚠️ Dangerous" if p["port"] in dangerous else "OK",
+            ]
+            for p in result.open_ports
+        ]
+        W(md_table(["Port", "Service", "Banner", "Note"], rows))
+    W("\n")

@@ -18,6 +18,7 @@ from rich.text import Text
 
 from src.config import console, C, SESSION, rate_limiter, TIMEOUT
 from src.models import ScanResult
+from src.scoring import score_and_report
 
 # Regular expression to capture a sourceMappingURL comment at the end of a JS file.
 _SOURCE_MAP_RE = re.compile(r"//# sourceMappingURL=([^\s]+)")
@@ -192,6 +193,13 @@ def run_sourcemap(
             description=f"[cyan]Sourcemap:[/cyan] {done}/{total} files…",
             completed=int((done / total) * 100),
         )
+        score_and_report(result, "sourcemap")
+
+
+def score_sourcemap(result):
+    if not result.sourcemap_findings:
+        return 100
+    return max(0, 100 - min(len(result.sourcemap_findings) * 15, 60))
 
 
 def display_sourcemap(result: ScanResult) -> None:
@@ -227,3 +235,11 @@ def display_sourcemap(result: ScanResult) -> None:
             "  [dim]Source maps were checked but none could be downloaded/unpacked.[/dim]"
         )
     console.print()
+
+
+def export_sourcemap(result: ScanResult, W: callable) -> None:
+    if result.sourcemap_findings:
+        W("## 🗺️ Source Map Exposure\n\n")
+        for f in result.sourcemap_findings:
+            W(f"- **Map Found**: `{f.get('url', '?')}`\n")
+        W("\n")

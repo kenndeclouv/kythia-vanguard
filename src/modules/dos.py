@@ -24,6 +24,7 @@ from rich.rule import Rule
 from src.models import ScanResult
 from src.config import SESSION
 from src.modules.stress import _detect_protection
+from src.scoring import score_and_report
 
 console = Console()
 C = {"bad": "bold red", "head": "bold cyan", "vuln": "bold red blink"}
@@ -459,11 +460,22 @@ def run_dos(target_url: str, hostname: str, result: ScanResult, progress, task) 
 
     result.dos_findings = findings
     progress.update(task, completed=100)
+    score_and_report(result, "dos")
 
 
 # ─────────────────────────────────────────────────────────────────
 # Display function
 # ─────────────────────────────────────────────────────────────────
+
+
+def score_dos(result):
+    findings = result.dos_findings
+    if not findings:
+        return 100
+    vulns = findings.get("vulnerabilities", []) if isinstance(findings, dict) else []
+    if not vulns:
+        return 100
+    return max(0, 100 - min(len(vulns) * 20, 80))
 
 
 def display_dos(result: ScanResult) -> None:
@@ -533,3 +545,54 @@ def display_dos(result: ScanResult) -> None:
         )
     else:
         console.print()
+
+
+def export_dos(result: ScanResult, W: callable) -> None:
+    W("### 💣 Layer 7 DoS Analysis\n\n")
+    df = result.dos_findings
+    if df:
+        slow = df.get("slowloris", {})
+        status = slow.get("status", "not_run")
+        if status == "vulnerable":
+            W("> [!CAUTION]\n> **Slowloris: VULNERABLE**\n\n")
+            W(f"- **Impact:** {slow.get('impact', '?')}\n")
+            W(f"- **Detail:** {slow.get('reason', '?')}\n")
+            W(
+                f"- **Sockets Opened:** {slow.get('sockets_opened', '?')} | **Survived:** {slow.get('sockets_survived', '?')}\n\n"
+            )
+        elif status == "skipped":
+            W(f"- **Slowloris:** ⏭️ Skipped — {slow.get('reason', '')}\n\n")
+        else:
+            W(f"- **Slowloris:** ✅ {slow.get('reason', 'Safe')}\n\n")
+
+        db = df.get("db_dos", {})
+        if db.get("status") == "vulnerable":
+            W("> [!CAUTION]\n> **Database Exhaustion: VULNERABLE**\n\n")
+            W(f"- **Impact:** {db.get('impact', '?')}\n")
+            for ep in db.get("endpoints", []):
+                W(f"  - `{ep['url']}`\n")
+                heavy_str = (
+                    ep["heavy_ms"]
+                    if isinstance(ep["heavy_ms"], str)
+                    else f"{ep['heavy_ms']:.0f}ms"
+                )
+                W(
+                    f"    - Baseline: `{ep['baseline_ms']:.0f}ms` → Payload: `{heavy_str}`\n"
+                )
+        elif db.get("status") == "skipped":
+            W(f"- **Database Exhaustion:** ⏭️ {db.get('reason', 'Skipped')}\n")
+        else:
+            W(f"- **Database Exhaustion:** ✅ {db.get('reason', 'Safe')}\n")
+        W("\n")
+
+        xml = df.get("xmlrpc", {})
+        if xml.get("status") == "vulnerable":
+            W("> [!CAUTION]\n> **XML-RPC Amplification: VULNERABLE**\n\n")
+            W(f"- **URL:** `{xml.get('url', '?')}`\n")
+            W(f"- **Detail:** {xml.get('reason', '?')}\n")
+            W(f"- **Impact:** {xml.get('impact', '?')}\n")
+        else:
+            W(f"- **XML-RPC:** ✅ {xml.get('reason', 'Safe')}\n")
+    else:
+        W("- DoS module was not run.\n")
+    W("\n")

@@ -16,6 +16,7 @@ from rich.text import Text
 
 from src.config import console, C, SESSION, rate_limiter, TIMEOUT
 from src.models import ScanResult
+from src.scoring import score_and_report
 
 _INTROSPECTION_QUERY = {
     "query": """
@@ -154,6 +155,13 @@ def run_graphql(target_url: str, result: ScanResult, progress, task) -> None:
         )
     )
     progress.update(task, description="[cyan]GraphQL:[/cyan] Done", completed=100)
+    score_and_report(result, "graphql")
+
+
+def score_graphql(result):
+    if not result.graphql_findings:
+        return 100
+    return max(0, 100 - min(len(result.graphql_findings) * 15, 60))
 
 
 def display_graphql(result: ScanResult) -> None:
@@ -185,3 +193,11 @@ def display_graphql(result: ScanResult) -> None:
 
     console.print(Panel(Text.from_markup(panel_content), border_style="cyan"))
     console.print()
+
+
+def export_graphql(result: ScanResult, W: callable) -> None:
+    if result.graphql_findings:
+        W("## ⚛️ GraphQL Findings\n\n")
+        for f in result.graphql_findings:
+            W(f"- **Issue**: `{f.get('url', '?')}`\n")
+        W("\n")

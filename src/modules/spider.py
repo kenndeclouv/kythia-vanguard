@@ -31,6 +31,7 @@ from rich.table import Table
 
 from src.config import RateLimiter, SESSION, TIMEOUT, C, console
 from src.models import ScanResult
+from src.scoring import score_and_report
 
 # ─────────────────────────────────────────────────────────────────
 # Spider-specific settings (intentionally more aggressive than global)
@@ -438,6 +439,7 @@ def run_spider(
     result.parameters = {url: sorted(p) for url, p in params.items()}
 
     progress.update(task, completed=50)
+    score_and_report(result, "spider")
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -449,6 +451,10 @@ run_deep_crawler = run_spider
 # ─────────────────────────────────────────────────────────────────
 # Display function
 # ─────────────────────────────────────────────────────────────────
+
+
+def score_spider(result):
+    return 100  # informational only
 
 
 def display_spider(result: ScanResult) -> None:
@@ -506,3 +512,19 @@ def display_spider(result: ScanResult) -> None:
     else:
         console.print("  [dim]No query parameters found.[/dim]")
     console.print()
+
+
+def export_spider(result: ScanResult, W: callable) -> None:
+    W("## 🕸️ Deep Crawler\n\n")
+    W(f"### Sitemap ({len(result.sitemap)} URLs)\n\n")
+    for url in result.sitemap[:100]:
+        W(f"- {url}\n")
+    if len(result.sitemap) > 100:
+        W(f"\n> …and {len(result.sitemap) - 100} more in the JSON report.\n")
+    W(f"\n### JS-Discovered Endpoints ({len(result.js_endpoints)})\n\n")
+    for ep in result.js_endpoints:
+        W(f"- `{ep}`\n")
+    W("\n### Query Parameters Mined\n\n")
+    for url, parms in result.parameters.items():
+        W(f"- **`{url}`** → `{', '.join(parms)}`\n")
+    W("\n")

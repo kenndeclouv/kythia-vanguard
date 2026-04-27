@@ -3,6 +3,7 @@ src/modules/nuclei.py — Module: Nuclei Vulnerability Scanner Wrapper.
 """
 
 import subprocess
+from src.export import md_table
 import json
 
 from rich import box
@@ -14,6 +15,7 @@ from rich.table import Table
 
 from src.config import console, C
 from src.models import ScanResult
+from src.scoring import score_and_report
 
 
 def run_nuclei_scan(target_url: str, result: ScanResult, progress, task) -> None:
@@ -89,6 +91,17 @@ def run_nuclei_scan(target_url: str, result: ScanResult, progress, task) -> None
                 border_style="red",
             )
         )
+        score_and_report(result, "nuclei")
+
+
+def score_nuclei(result):
+    if not result.nuclei_findings:
+        return 100
+    _d = {"critical": 25, "high": 15, "medium": 6, "low": 2, "info": 0}
+    deduct = sum(
+        _d.get(n.get("severity", "info").lower(), 0) for n in result.nuclei_findings
+    )
+    return max(0, 100 - min(deduct, 90))
 
 
 def display_nuclei(result: ScanResult) -> None:
@@ -150,3 +163,19 @@ def display_nuclei(result: ScanResult) -> None:
 
     console.print(t)
     console.print()
+
+
+def export_nuclei(result: ScanResult, W: callable) -> None:
+    if result.nuclei_findings:
+        W(f"## ☢️ Nuclei Scan ({len(result.nuclei_findings)} findings)\n\n")
+        rows = [
+            [
+                n.get("template_id", "?"),
+                n.get("severity", "?"),
+                n.get("name", "?"),
+                n.get("matched_at", "?"),
+            ]
+            for n in result.nuclei_findings
+        ]
+        W(md_table(["Template ID", "Severity", "Name", "Matched At"], rows))
+        W("\n")

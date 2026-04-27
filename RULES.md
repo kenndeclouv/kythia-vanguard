@@ -32,6 +32,14 @@ If you are tasked to create a module named `cloud`:
 3. The key MUST match the filename in `src/modules/`.
    *Example:* `("cloud", "Cloud & Bucket Sniper — Scan exposed AWS/S3")`
 
+### Step D: The Export
+Create a function starting with `export_` (e.g., `def export_cloud(result: ScanResult, W: callable) -> None:`). Use `W('text')` to write Markdown. This function will be dynamically autoloaded to generate reports.
+
+### Step E: The Scoring
+1. In your module file, create a function starting with `score_` (e.g., `def score_cloud(result: ScanResult) -> int:`).
+2. The function must return an integer between `0` and `100` (`100` = perfectly secure/neutral, `0` = critically vulnerable).
+3. At the very end of your `run_` function, you MUST call the aggregator: `score_and_report(result, "cloud")`. Don't forget to import it: `from src.scoring import score_and_report`.
+
 ## 3. STRICT ANTI-PATTERNS (DO NOT DO THIS)
 - ❌ Naming the main function `def scan_target():` -> It MUST be `def run_target():`.
 - ❌ Putting the display function in `src/ui/display.py` -> It MUST be in your module file.

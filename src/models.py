@@ -59,3 +59,5 @@ class ScanResult:
     apisec_findings: list = field(default_factory=list)  # Exposed API docs
     oauth_findings: list = field(default_factory=list)  # OAuth misconfigurations
     brutal_mode: bool = False  # Set True to enable infinite 1000-VU brutal mode
+    cf_bypass_findings: dict = field(default_factory=dict)  # Cloudflare bypass research
+    module_scores: dict = field(default_factory=dict)  # Per-module scores (0-100)

@@ -11,6 +11,7 @@ ALL secret types and reports with full context (line number + snippet).
 """
 
 from __future__ import annotations
+from src.export import md_table
 
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -24,6 +25,7 @@ from rich.table import Table
 
 from src.config import SESSION, RateLimiter, TIMEOUT, console, C
 from src.models import ScanResult
+from src.scoring import score_and_report
 
 _rl = RateLimiter(rps=20.0, use_jitter=False)
 
@@ -295,6 +297,13 @@ def run_js_secrets(target_url: str, result: ScanResult, progress, task) -> None:
 
     result.js_secret_findings = unique
     progress.update(task, completed=50)
+    score_and_report(result, "js_secrets")
+
+
+def score_js_secrets(result):
+    if not result.js_secret_findings:
+        return 100
+    return max(0, 100 - min(len(result.js_secret_findings) * 20, 80))
 
 
 def display_js_secrets(result: ScanResult) -> None:
@@ -353,3 +362,21 @@ def display_js_secrets(result: ScanResult) -> None:
 
     console.print(tbl)
     console.print()
+
+
+def export_js_secrets(result: ScanResult, W: callable) -> None:
+    if result.js_secret_findings:
+        W(f"### 🕵️ JS Secret Hunter ({len(result.js_secret_findings)} secrets)\n\n")
+        W("> [!CAUTION]\n> Secrets found hardcoded in JavaScript source files.\n\n")
+        rows = [
+            [
+                f.get("type", "?"),
+                f.get("url", "?")[:80],
+                f"`{str(f.get('value', ''))[:50]}`",
+            ]
+            for f in result.js_secret_findings
+        ]
+        W(md_table(["Secret Type", "Source URL", "Value"], rows))
+        W("\n")
+    else:
+        W("### 🕵️ JS Secret Hunter\n\n- ✅ No secrets found in JS files.\n\n")

@@ -8,6 +8,7 @@ sending a harmless test API call (read-only where possible).
 """
 
 from __future__ import annotations
+from src.export import md_table
 
 import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -21,6 +22,7 @@ from rich.table import Table
 
 from src.config import SESSION, rate_limiter, TIMEOUT, console, C
 from src.models import ScanResult
+from src.scoring import score_and_report
 
 # ─────────────────────────────────────────────────────────────────
 # Regex patterns — sorted by specificity
@@ -305,11 +307,18 @@ def run_webhook(
 
     result.webhook_findings = validated
     progress.update(task, completed=50)
+    score_and_report(result, "webhook")
 
 
 # ─────────────────────────────────────────────────────────────────
 # Display function
 # ─────────────────────────────────────────────────────────────────
+
+
+def score_webhook(result):
+    if not result.webhook_findings:
+        return 100
+    return max(0, 100 - min(len(result.webhook_findings) * 20, 60))
 
 
 def display_webhook(result: ScanResult) -> None:
@@ -374,3 +383,27 @@ def display_webhook(result: ScanResult) -> None:
             )
         )
     console.print()
+
+
+def export_webhook(result: ScanResult, W: callable) -> None:
+    if result.webhook_findings:
+        W(
+            f"### 🔔 Webhook / Bot Credential Leaks ({len(result.webhook_findings)} found)\n\n"
+        )
+        W(
+            "> [!CAUTION]\n> The following credentials were found hardcoded in JavaScript files.\n\n"
+        )
+        rows = [
+            [
+                f.get("type", "?"),
+                f.get("source_url", "?")[:80],
+                f"`{str(f.get('token', ''))[:40]}…`",
+            ]
+            for f in result.webhook_findings
+        ]
+        W(md_table(["Type", "Source URL", "Token (truncated)"], rows))
+        W("\n")
+    else:
+        W(
+            "### 🔔 Webhook / Bot Credential Leaks\n\n- ✅ No hardcoded webhook tokens found.\n\n"
+        )

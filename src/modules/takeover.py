@@ -9,6 +9,7 @@ For every subdomain in result.subdomains (populated by recon.py):
 """
 
 from __future__ import annotations
+from src.export import md_table
 
 import subprocess
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -23,6 +24,7 @@ from rich.table import Table
 
 from src.config import SESSION, RateLimiter, TIMEOUT, console, C
 from src.models import ScanResult
+from src.scoring import score_and_report
 
 _rl = RateLimiter(rps=20.0, use_jitter=False)
 
@@ -286,6 +288,13 @@ def run_takeover(hostname: str, result: ScanResult, progress, task) -> None:
 
     result.takeover_findings = findings
     progress.update(task, completed=50)
+    score_and_report(result, "takeover")
+
+
+def score_takeover(result):
+    if not result.takeover_findings:
+        return 100
+    return max(0, 100 - min(len(result.takeover_findings) * 30, 90))
 
 
 def display_takeover(result: ScanResult) -> None:
@@ -329,3 +338,24 @@ def display_takeover(result: ScanResult) -> None:
 
     console.print(tbl)
     console.print()
+
+
+def export_takeover(result: ScanResult, W: callable) -> None:
+    if result.takeover_findings:
+        W(f"### 👻 Subdomain Takeover ({len(result.takeover_findings)} vulnerable)\n\n")
+        W(
+            "> [!CAUTION]\n> These subdomains can be claimed immediately on the listed platforms.\n\n"
+        )
+        rows = [
+            [
+                f.get("subdomain", "?"),
+                f.get("cname", "?"),
+                f.get("platform", "?"),
+                f.get("evidence", ""),
+            ]
+            for f in result.takeover_findings
+        ]
+        W(md_table(["Subdomain", "CNAME", "Platform", "Evidence"], rows))
+        W("\n")
+    else:
+        W("### 👻 Subdomain Takeover\n\n- ✅ No vulnerable subdomains found.\n\n")

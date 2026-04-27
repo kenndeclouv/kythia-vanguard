@@ -51,17 +51,41 @@ from rich.rule import Rule
 from rich.prompt import Confirm
 from rich.progress import (
     BarColumn,
-    MofNCompleteColumn,
     Progress,
+    ProgressColumn,
     SpinnerColumn,
     TaskProgressColumn,
     TextColumn,
     TimeElapsedColumn,
 )
+from rich.text import Text as RichText
 
 # ─────────────────────────────────────────────────────────────────
-# Ensure src/ is on the path when run directly
+# Custom progress column: shows module score after completion
 # ─────────────────────────────────────────────────────────────────
+class ScoreColumn(ProgressColumn):
+    """Renders the module score (e.g. 85/100) once the task finishes."""
+
+    def __init__(self, result: "ScanResult", mod_id_map: dict):
+        super().__init__()
+        self._result = result
+        self._mod_id_map = mod_id_map  # task_id → mod_id
+
+    def render(self, task) -> RichText:
+        mod_id = self._mod_id_map.get(task.id)
+        if mod_id and task.finished:
+            score = self._result.module_scores.get(mod_id)
+            if score is not None:
+                if score >= 80:
+                    color = "bold green"
+                elif score >= 50:
+                    color = "bold yellow"
+                else:
+                    color = "bold red"
+                return RichText(f"{score}/100", style=color)
+        return RichText("", style="dim")
+
+
 
 ROOT_DIR = Path(__file__).resolve().parent
 SRC_DIR = ROOT_DIR / "src"
@@ -72,23 +96,51 @@ if str(SRC_DIR) not in sys.path:
 # Dependency check
 # ─────────────────────────────────────────────────────────────────
 
-required_modules = ["requests", "bs4", "rich", "prompt_toolkit", "yaml"]
+required_modules = ["requests", "bs4", "rich", "prompt_toolkit", "yaml", "dnspython"]
 missing_modules = [
     mod for mod in required_modules if importlib.util.find_spec(mod) is None
 ]
 
 if missing_modules:
-    pkg_map = {"bs4": "beautifulsoup4", "yaml": "pyyaml"}
+    pkg_map = {"bs4": "beautifulsoup4", "yaml": "pyyaml", "dnspython": "dnspython"}
     packages_to_install = [pkg_map.get(m, m) for m in missing_modules]
-    print(f"\n[!] Missing dependencies detected: {', '.join(missing_modules)}")
-    print(f"[*] Auto-installing packages: {', '.join(packages_to_install)}...")
+
+    # ANSI codes — rich isn't loaded yet at this stage
+    _R = "\033[0m"  # reset
+    _B = "\033[1m"  # bold
+    _Y = "\033[33m"  # yellow
+    _C = "\033[36m"  # cyan
+    _G = "\033[32m"  # green
+    _RED = "\033[31m"  # red
+    _DIM = "\033[2m"  # dim
+
+    print(f"\n{_B}{_Y}┌{'─' * 58}┐{_R}")
+    print(f"{_B}{_Y}│{'  📦  DEPENDENCY AUTO-INSTALLER':^58}│{_R}")
+    print(f"{_B}{_Y}└{'─' * 58}┘{_R}\n")
+    print(f"  {_Y}⚠  Missing:{_R} {_C}{', '.join(missing_modules)}{_R}")
+    print(f"  {_DIM}→  Will install: {', '.join(packages_to_install)}{_R}\n")
+
     import subprocess
+
     try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", *packages_to_install])
-        print("[+] Dependencies installed successfully!\n")
+        for i, pkg in enumerate(packages_to_install, 1):
+            print(
+                f"  {_B}[{i}/{len(packages_to_install)}]{_R} Installing {_C}{pkg}{_R}…",
+                end=" ",
+                flush=True,
+            )
+            subprocess.check_call(
+                [sys.executable, "-m", "pip", "install", pkg],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            print(f"{_G}✓{_R}")
+        print(f"\n  {_G}{_B}✅ All dependencies installed successfully!{_R}\n")
     except Exception as e:
-        print(f"\n[ERROR] Failed to auto-install dependencies: {e}")
-        print(f"Run manually:  pip install {' '.join(packages_to_install)}\n")
+        print(f"\n  {_RED}{_B}✗ Auto-install failed:{_R} {e}")
+        print(
+            f"  {_DIM}Run manually:  pip install {' '.join(packages_to_install)}{_R}\n"
+        )
         sys.exit(1)
 
 # ─────────────────────────────────────────────────────────────────
@@ -145,9 +197,14 @@ def run_scan(target_raw: str, modules_selected: list[str]) -> None:
                 if not missing.startswith("src."):
                     pkg_map = {"yaml": "pyyaml", "bs4": "beautifulsoup4"}
                     pkg_name = pkg_map.get(missing, missing)
-                    console.print(f"[{C['warn']}]⚠️ Dependency '{missing}' missing. Installing '{pkg_name}' automatically...[/{C['warn']}]")
+                    console.print(
+                        f"[{C['warn']}]⚠️ Dependency '{missing}' missing. Installing '{pkg_name}' automatically...[/{C['warn']}]"
+                    )
                     import subprocess
-                    subprocess.check_call([sys.executable, "-m", "pip", "install", pkg_name])
+
+                    subprocess.check_call(
+                        [sys.executable, "-m", "pip", "install", pkg_name]
+                    )
                     mod_obj = importlib.import_module(f"src.modules.{mod_id}")
                 else:
                     raise e
@@ -193,12 +250,13 @@ def run_scan(target_raw: str, modules_selected: list[str]) -> None:
             )
 
     # 2. RUN MODULE (Only active)
+    _task_mod_map: dict = {}  # task_id → mod_id for ScoreColumn
     with Progress(
         SpinnerColumn(spinner_name="dots12", style="cyan"),
         TextColumn("[progress.description]{task.description}", style="white"),
         BarColumn(bar_width=35, style="cyan", complete_style="bold green"),
         TaskProgressColumn(),
-        MofNCompleteColumn(),
+        ScoreColumn(result, _task_mod_map),
         TimeElapsedColumn(),
         console=console,
         transient=False,
@@ -209,6 +267,7 @@ def run_scan(target_raw: str, modules_selected: list[str]) -> None:
 
             name, total, runner = MODULE_MAP[mod_id]
             task = progress.add_task(f"[cyan]{name}[/cyan]", total=total)
+            _task_mod_map[task] = mod_id
             try:
                 runner(progress, task)
                 progress.update(
@@ -239,7 +298,10 @@ def run_scan(target_raw: str, modules_selected: list[str]) -> None:
                     pkg_map = {"yaml": "pyyaml", "bs4": "beautifulsoup4"}
                     pkg_name = pkg_map.get(missing, missing)
                     import subprocess
-                    subprocess.check_call([sys.executable, "-m", "pip", "install", pkg_name])
+
+                    subprocess.check_call(
+                        [sys.executable, "-m", "pip", "install", pkg_name]
+                    )
                     mod_obj = importlib.import_module(f"src.modules.{mod_id}")
                 else:
                     raise e
@@ -265,7 +327,7 @@ def run_scan(target_raw: str, modules_selected: list[str]) -> None:
 
     console.print(Rule("[bold]Exporting Reports[/bold]", style="dim"))
     try:
-        json_path, md_path = export_results(result, target_raw)
+        json_path, md_path = export_results(result, target_raw, modules_selected)
         console.print(
             f"  [{C['ok']}]✓ JSON report:[/{C['ok']}]     [cyan]{json_path}[/cyan]"
         )

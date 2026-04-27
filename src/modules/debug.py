@@ -21,6 +21,7 @@ from rich.table import Table
 
 from src.config import SESSION, rate_limiter, TIMEOUT, console, C
 from src.models import ScanResult
+from src.scoring import score_and_report
 
 # ─────────────────────────────────────────────────────────────────
 # Payloads & Signatures
@@ -261,11 +262,18 @@ def run_debug(target_url: str, result: ScanResult, progress, task) -> None:
 
     result.debug_findings = findings
     progress.update(task, completed=50)
+    score_and_report(result, "debug")
 
 
 # ─────────────────────────────────────────────────────────────────
 # Display function
 # ─────────────────────────────────────────────────────────────────
+
+
+def score_debug(result):
+    if not result.debug_findings:
+        return 100
+    return max(0, 100 - min(len(result.debug_findings) * 20, 80))
 
 
 def display_debug(result: ScanResult) -> None:
@@ -320,3 +328,18 @@ def display_debug(result: ScanResult) -> None:
             )
 
     console.print()
+
+
+def export_debug(result: ScanResult, W: callable) -> None:
+    if result.debug_findings:
+        W(f"### 🐞 Debug Mode Exposure ({len(result.debug_findings)} findings)\n\n")
+        for f in result.debug_findings:
+            sev = f.get("severity", "info").upper()
+            W(f"#### `[{sev}]` {f.get('title', 'Unknown')}\n\n")
+            W(f"- **URL:** {f.get('url', '?')}\n")
+            W(f"- **Detail:** {f.get('detail', '')}\n")
+            if f.get("evidence"):
+                W(f"- **Evidence:** `{str(f['evidence'])[:200]}`\n")
+            W("\n")
+    else:
+        W("### 🐞 Debug Mode Exposure\n\n- ✅ No debug mode leaks detected.\n\n")

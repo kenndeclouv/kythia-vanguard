@@ -3,11 +3,13 @@ src/modules/recon.py
 """
 
 from rich import box
+from src.export import md_table
 from rich.rule import Rule
 from rich.table import Table
 
 from src.config import console, C, SESSION, TIMEOUT, rate_limiter
 from src.models import ScanResult
+from src.scoring import score_and_report
 
 
 def run_recon(
@@ -160,6 +162,17 @@ def run_recon(
         except Exception:
             pass
     progress.advance(task, 10)
+    score_and_report(result, "recon")
+
+
+def score_recon(result):
+    score = 100
+    whois = result.whois or {}
+    if not whois.get("spf_record"):
+        score -= 15
+    if len(result.subdomains) > 20:
+        score -= 10
+    return max(0, score)
 
 
 def display_recon(result: ScanResult) -> None:
@@ -222,3 +235,14 @@ def display_recon(result: ScanResult) -> None:
     else:
         console.print("[dim]No subdomains found via crt.sh.[/dim]")
     console.print()
+
+
+def export_recon(result: ScanResult, W: callable) -> None:
+    W("## 📋 WHOIS\n\n")
+    if result.whois:
+        W(md_table(["Field", "Value"], [[k, v] for k, v in result.whois.items()]))
+    W("\n")
+    W(f"## 🌐 Subdomains ({len(result.subdomains)} found)\n\n")
+    for s in result.subdomains:
+        W(f"- `{s}`\n")
+    W("\n")

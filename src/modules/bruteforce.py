@@ -23,43 +23,86 @@ from rich.table import Table
 from src.config import SESSION, console
 from src.models import ScanResult
 from src.wordlists.credentials import COMMON_USERS, COMMON_PASSWORDS
+from src.scoring import score_and_report
 
 # ─────────────────────────────────────────────────────────────────
 # Configuration
 # ─────────────────────────────────────────────────────────────────
 
-_BRUTE_WORKERS: int = 10        # concurrent threads per form
-_BRUTE_DELAY: float = 0.3       # delay between attempts (seconds) — polite
-_LOCKOUT_THRESHOLD: int = 5     # consecutive 429s before declaring lockout
-_MAX_PAIRS: int = 500           # hard cap to prevent endless runs
+_BRUTE_WORKERS: int = 10  # concurrent threads per form
+_BRUTE_DELAY: float = 0.3  # delay between attempts (seconds) — polite
+_LOCKOUT_THRESHOLD: int = 5  # consecutive 429s before declaring lockout
+_MAX_PAIRS: int = 500  # hard cap to prevent endless runs
 
 # Keywords that typically appear in failed login responses
 _FAILURE_KEYWORDS = [
-    "invalid", "incorrect", "wrong", "failed", "error",
-    "denied", "unauthorized", "bad credentials", "try again",
-    "not found", "tidak valid", "salah", "gagal",
+    "invalid",
+    "incorrect",
+    "wrong",
+    "failed",
+    "error",
+    "denied",
+    "unauthorized",
+    "bad credentials",
+    "try again",
+    "not found",
+    "tidak valid",
+    "salah",
+    "gagal",
 ]
 
 # Keywords that typically appear in successful login responses
 _SUCCESS_KEYWORDS = [
-    "dashboard", "logout", "welcome", "profile", "account",
-    "sign out", "log out", "my account", "settings", "beranda",
-    "logout", "keluar",
+    "dashboard",
+    "logout",
+    "welcome",
+    "profile",
+    "account",
+    "sign out",
+    "log out",
+    "my account",
+    "settings",
+    "beranda",
+    "logout",
+    "keluar",
 ]
 
 # Login-related URL path hints
 _LOGIN_PATH_HINTS = [
-    "login", "signin", "sign-in", "log-in", "auth", "account",
-    "session", "user/login", "admin/login", "wp-login", "masuk",
+    "login",
+    "signin",
+    "sign-in",
+    "log-in",
+    "auth",
+    "account",
+    "session",
+    "user/login",
+    "admin/login",
+    "wp-login",
+    "masuk",
 ]
 
 # Common field name patterns for username / password inputs
 _USER_FIELD_NAMES = {
-    "username", "user", "email", "login", "name", "account",
-    "uname", "userid", "user_id", "user_email", "identifier",
+    "username",
+    "user",
+    "email",
+    "login",
+    "name",
+    "account",
+    "uname",
+    "userid",
+    "user_id",
+    "user_email",
+    "identifier",
 }
 _PASS_FIELD_NAMES = {
-    "password", "pass", "passwd", "pwd", "secret", "passphrase",
+    "password",
+    "pass",
+    "passwd",
+    "pwd",
+    "secret",
+    "passphrase",
 }
 
 
@@ -76,15 +119,16 @@ def _is_login_form(form: dict) -> bool:
     input_types = {(i.get("type") or "").lower() for i in inputs}
 
     # Must have a password field
-    has_password = (
-        "password" in input_types
-        or bool(input_names & _PASS_FIELD_NAMES)
-    )
+    has_password = "password" in input_types or bool(input_names & _PASS_FIELD_NAMES)
     if not has_password:
         return False
 
     # Has a username-like text/email field
-    has_user = bool(input_names & _USER_FIELD_NAMES) or "email" in input_types or "text" in input_types
+    has_user = (
+        bool(input_names & _USER_FIELD_NAMES)
+        or "email" in input_types
+        or "text" in input_types
+    )
 
     # Action URL contains a login hint
     action_hint = any(h in action for h in _LOGIN_PATH_HINTS)
@@ -107,21 +151,30 @@ def _auto_detect_login_forms(result: ScanResult, target_url: str) -> list[dict]:
 
     # 2. Fallback: probe common paths
     if not login_forms:
-        for path in ["/login", "/signin", "/wp-login.php", "/admin/login",
-                     "/user/login", "/auth/login", "/account/login"]:
+        for path in [
+            "/login",
+            "/signin",
+            "/wp-login.php",
+            "/admin/login",
+            "/user/login",
+            "/auth/login",
+            "/account/login",
+        ]:
             url = urljoin(target_url, path)
             try:
                 r = SESSION.get(url, timeout=6, allow_redirects=True)
                 if r.status_code == 200 and "<form" in r.text.lower():
                     # Synthesize a minimal form dict so downstream code works
-                    login_forms.append({
-                        "action": url,
-                        "method": "POST",
-                        "form_num": 0,
-                        "inputs": [],  # will be guessed by _build_payload
-                        "_raw_html": r.text,
-                        "_url": url,
-                    })
+                    login_forms.append(
+                        {
+                            "action": url,
+                            "method": "POST",
+                            "form_num": 0,
+                            "inputs": [],  # will be guessed by _build_payload
+                            "_raw_html": r.text,
+                            "_url": url,
+                        }
+                    )
             except Exception:
                 pass
 
@@ -133,8 +186,9 @@ def _auto_detect_login_forms(result: ScanResult, target_url: str) -> list[dict]:
 # ─────────────────────────────────────────────────────────────────
 
 
-def _get_failure_baseline(action_url: str, user_field: str, pass_field: str,
-                          extra_fields: dict) -> dict:
+def _get_failure_baseline(
+    action_url: str, user_field: str, pass_field: str, extra_fields: dict
+) -> dict:
     """
     Submit a deliberately wrong credential to learn what a failed login looks
     like (status code, redirect URL, response length, keywords).
@@ -172,7 +226,10 @@ def _is_success(response, baseline: dict) -> bool:
     if response.url != baseline.get("redirect_url"):
         # Redirected to somewhere different → promising
         redirected_to = response.url.lower()
-        if any(kw in redirected_to for kw in _SUCCESS_KEYWORDS + ["dashboard", "home", "panel"]):
+        if any(
+            kw in redirected_to
+            for kw in _SUCCESS_KEYWORDS + ["dashboard", "home", "panel"]
+        ):
             return True
         # Redirected away from login page
         if not any(h in redirected_to for h in _LOGIN_PATH_HINTS):
@@ -247,7 +304,7 @@ def _attack_form(
 
     progress.update(
         task,
-        description=f"[cyan]BruteForce:[/cyan] Fingerprinting failure baseline → {action[:60]}…"
+        description=f"[cyan]BruteForce:[/cyan] Fingerprinting failure baseline → {action[:60]}…",
     )
     baseline = _get_failure_baseline(action, user_field, pass_field, extra_fields)
 
@@ -310,7 +367,7 @@ def _attack_form(
                 if consecutive_429 >= _LOCKOUT_THRESHOLD:
                     progress.update(
                         task,
-                        description=f"[yellow]BruteForce:[/yellow] Account lockout detected after {attempt_num} attempts — aborting."
+                        description=f"[yellow]BruteForce:[/yellow] Account lockout detected after {attempt_num} attempts — aborting.",
                     )
                     pool.shutdown(wait=False, cancel_futures=True)
                     break
@@ -318,7 +375,7 @@ def _attack_form(
             elif res.get("waf_block"):
                 progress.update(
                     task,
-                    description="[yellow]BruteForce:[/yellow] WAF/403 detected — slowing down…"
+                    description="[yellow]BruteForce:[/yellow] WAF/403 detected — slowing down…",
                 )
                 time.sleep(2)
 
@@ -326,7 +383,7 @@ def _attack_form(
                 cracked.append(res)
                 progress.update(
                     task,
-                    description=f"[bold red blink]💀 CRACKED: {res['username']} : {res['password']}[/bold red blink]"
+                    description=f"[bold red blink]💀 CRACKED: {res['username']} : {res['password']}[/bold red blink]",
                 )
                 progress.console.print(
                     Panel(
@@ -344,7 +401,7 @@ def _attack_form(
 
             progress.update(
                 task,
-                description=f"[cyan]BruteForce:[/cyan] {attempt_num}/{len(pairs)} attempts — {len(cracked)} cracked…"
+                description=f"[cyan]BruteForce:[/cyan] {attempt_num}/{len(pairs)} attempts — {len(cracked)} cracked…",
             )
 
     return cracked
@@ -355,12 +412,16 @@ def _attack_form(
 # ─────────────────────────────────────────────────────────────────
 
 
-def run_bruteforce(target_url: str, hostname: str, result: ScanResult, progress, task) -> None:
+def run_bruteforce(
+    target_url: str, hostname: str, result: ScanResult, progress, task
+) -> None:
     """
     Detect login forms and attempt credential attacks.
     Stores results in result.bruteforce_findings.
     """
-    progress.update(task, description="[cyan]BruteForce:[/cyan] Scanning for login forms…")
+    progress.update(
+        task, description="[cyan]BruteForce:[/cyan] Scanning for login forms…"
+    )
 
     login_forms = _auto_detect_login_forms(result, target_url)
 
@@ -376,7 +437,7 @@ def run_bruteforce(target_url: str, hostname: str, result: ScanResult, progress,
 
     progress.update(
         task,
-        description=f"[cyan]BruteForce:[/cyan] Found {len(login_forms)} login form(s). Starting credential attack…"
+        description=f"[cyan]BruteForce:[/cyan] Found {len(login_forms)} login form(s). Starting credential attack…",
     )
 
     all_cracked: list[dict] = []
@@ -384,7 +445,7 @@ def run_bruteforce(target_url: str, hostname: str, result: ScanResult, progress,
         action = form.get("action") or target_url
         progress.update(
             task,
-            description=f"[cyan]BruteForce:[/cyan] Attacking form {i + 1}/{len(login_forms)} → {action[:60]}…"
+            description=f"[cyan]BruteForce:[/cyan] Attacking form {i + 1}/{len(login_forms)} → {action[:60]}…",
         )
         cracked = _attack_form(form, target_url, progress, task)
         all_cracked.extend(cracked)
@@ -395,11 +456,21 @@ def run_bruteforce(target_url: str, hostname: str, result: ScanResult, progress,
         "cracked": all_cracked,
     }
     progress.update(task, completed=100)
+    score_and_report(result, "bruteforce")
 
 
 # ─────────────────────────────────────────────────────────────────
 # Display function
 # ─────────────────────────────────────────────────────────────────
+
+
+def score_bruteforce(result):
+    findings = result.bruteforce_findings
+    if not findings:
+        return 100
+    if isinstance(findings, dict) and findings.get("cracked"):
+        return max(0, 100 - len(findings.get("cracked", [])) * 30)
+    return 100
 
 
 def display_bruteforce(result: ScanResult) -> None:
@@ -429,7 +500,10 @@ def display_bruteforce(result: ScanResult) -> None:
         return
 
     tbl = Table(
-        "Form URL", "Username", "Password", "Redirect",
+        "Form URL",
+        "Username",
+        "Password",
+        "Redirect",
         header_style="bold red",
         border_style="red",
         show_lines=True,
@@ -443,3 +517,11 @@ def display_bruteforce(result: ScanResult) -> None:
         )
     console.print(tbl)
     console.print()
+
+
+def export_bruteforce(result: ScanResult, W: callable) -> None:
+    if result.bruteforce_findings:
+        W("## 🔓 Brute-force Findings\n\n")
+        for k, v in result.bruteforce_findings.items():
+            W(f"- **{k}**: {v}\n")
+        W("\n")

@@ -10,6 +10,9 @@ from prompt_toolkit.formatted_text import HTML
 from prompt_toolkit.shortcuts import checkboxlist_dialog, radiolist_dialog
 from prompt_toolkit.styles import Style as PtkStyle
 from rich.rule import Rule
+from rich.panel import Panel
+from rich.align import Align
+from rich.text import Text
 
 from src.config import console, SCAN_MODULES, rate_limiter
 
@@ -77,14 +80,24 @@ def interactive_menu() -> tuple[str, list[str]]:
         rate_limiter.delay = 1.0 / rps_choice
         if rps_choice == 100:
             os.environ["BRUTAL"] = "1"
+            msg = "☠️ BRUTAL MODE ENABLED — No limits, infinite loops active!"
             console.print(
-                "[bold red blink] ☠️ BRUTAL MODE ENABLED — No limits, infinite loops active![/bold red blink]"
+                Panel(
+                    Align.center(Text(msg, style="bold red blink")),
+                    border_style="red",
+                    padding=(1, 2),
+                )
             )
         elif rps_choice == 10000:
             os.environ["DOOMSDAY"] = "1"
             os.environ["BRUTAL"] = "1"  # Doomsday implies brutal
+            msg = "☢️ DOOMSDAY MODE ENABLED — NUCLEAR OPTION ENGAGED!"
             console.print(
-                "[bold white on red blink] ☢️ DOOMSDAY MODE ENABLED — NUCLEAR OPTION ENGAGED! [/bold white on red blink]"
+                Panel(
+                    Align.center(Text(msg, style="bold white on red blink")),
+                    border_style="red",
+                    padding=(1, 2),
+                )
             )
 
     return target, result
