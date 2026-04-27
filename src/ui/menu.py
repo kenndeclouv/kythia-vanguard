@@ -45,7 +45,7 @@ def interactive_menu() -> tuple[str, list[str]]:
         sys.exit(0)
 
     result = checkboxlist_dialog(
-        title="KENN-RECON Pro v1.0.0-rc.1 — Select Scan Modules",
+        title="Kythia Vanguard v1.0.0-rc.1 — Select Scan Modules",
         text="Use SPACE to toggle, ENTER to confirm, TAB to switch focus:",
         values=SCAN_MODULES,
         style=PTK_STYLE,

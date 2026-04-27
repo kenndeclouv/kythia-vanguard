@@ -242,7 +242,7 @@ def run_scan(target_raw: str, modules_selected: list[str]) -> None:
 
     console.print()
     console.print(
-        Rule("[dim]KENN-RECON Pro v1.0.0-rc.1 — Scan Complete[/dim]", style="dim")
+        Rule("[dim]Kythia Vanguard v1.0.0-rc.1 — Scan Complete[/dim]", style="dim")
     )
     console.print()
 
@@ -289,7 +289,7 @@ def interactive_main() -> None:
 
 def _build_cli_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="KENN-RECON Pro v1.0.0-rc.1 — Advanced Recon & Security Auditor"
+        description="Kythia Vanguard v1.0.0-rc.1 — Advanced Recon & Security Auditor"
     )
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("interactive", help="Run interactive scanner UI")

@@ -1,26 +1,29 @@
 ```text
-╭─────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│                                                                                                     │
-│        ██╗  ██╗███████╗███╗   ██╗███╗   ██╗      ██████╗ ███████╗ ██████╗ ██████╗ ███╗   ██╗        │
-│        ██║ ██╔╝██╔════╝████╗  ██║████╗  ██║      ██╔══██╗██╔════╝██╔════╝██╔═══██╗████╗  ██║        │
-│        █████╔╝ █████╗  ██╔██╗ ██║██╔██╗ ██║█████╗██████╔╝█████╗  ██║     ██║   ██║██╔██╗ ██║        │
-│        ██╔═██╗ ██╔══╝  ██║╚██╗██║██║╚██╗██║╚════╝██╔══██╗██╔══╝  ██║     ██║   ██║██║╚██╗██║        │
-│        ██║  ██╗███████╗██║ ╚████║██║ ╚████║      ██║  ██║███████╗╚██████╗╚██████╔╝██║ ╚████║        │
-│        ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚═══╝      ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝        │
-│                                        ╔═══╗ ╦═╗ ╔═╗                                                │
-│                                        ╠═══╝ ╠╦╝ ║ ║                                                │
-│                                        ╩     ╩╚═ ╚═╝                                                │
-│       Author  : Kenndeclouv                                                                         │
-│       Github  : https://github.com/kenndeclouv                                                      │
-│       Website : https://kenndeclouv.com                                                             │
-│       Version : 1.0.0-rc.1                                                                          │
-│                                                                                                     │
-╰────────────────────── For authorized security testing only — use responsibly ───────────────────────╯
+
+╭──────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                      │
+│  ██╗  ██╗     ██╗   ██╗ █████╗ ███╗   ██╗ ██████╗ ██╗   ██╗ █████╗ ██████╗ ██████╗   │
+│  ██║ ██╔╝     ██║   ██║██╔══██╗████╗  ██║██╔════╝ ██║   ██║██╔══██╗██╔══██╗██╔══██╗  │
+│  █████╔╝█████╗██║   ██║███████║██╔██╗ ██║██║  ███╗██║   ██║███████║██████╔╝██║  ██║  │
+│  ██╔═██╗╚════╝╚██╗ ██╔╝██╔══██║██║╚██╗██║██║   ██║██║   ██║██╔══██║██╔══██╗██║  ██║  │
+│  ██║  ██╗      ╚████╔╝ ██║  ██║██║ ╚████║╚██████╔╝╚██████╔╝██║  ██║██║  ██║██████╔╝  │
+│  ╚═╝  ╚═╝       ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝   │
+│                                                                                      │
+│                 Advanced Automated Reconnaissance & Security Auditor                 │
+│                                 A Kythia Ecosystem                                   │
+│                                                                                      │
+│  Author  : Kenndeclouv                                                               │
+│  Github  : https://github.com/kenndeclouv                                            │
+│  Website : https://kenndeclouv.com                                                   │
+│  Version : 1.0.0-rc.1                                                                │
+│                                                                                      │
+╰─────────────── For authorized security testing only — use responsibly ───────────────╯
+
 ```
 
 **Advanced Automated Reconnaissance & Security Auditor**
 
-KENN-RECON Pro is a modular, high-performance, and visually stunning CLI tool designed for automated web application reconnaissance and security auditing. Built with a dynamic autoloading architecture, it seamlessly integrates custom Python modules and powerful third-party engines like `nuclei` to deliver comprehensive security reports directly to your terminal.
+Kythia Vanguard is a modular, high-performance, and visually stunning CLI tool designed for automated web application reconnaissance and security auditing. Built with a dynamic autoloading architecture, it seamlessly integrates custom Python modules and powerful third-party engines like `nuclei` to deliver comprehensive security reports directly to your terminal.
 
 > [!WARNING]
 > **LEGAL DISCLAIMER**
@@ -45,8 +48,8 @@ Due to PEP 668 on modern Linux distributions (like Pop!_OS, Ubuntu), it is highl
 
 ```bash
 # Clone the repository
-git clone [https://github.com/kenndeclouv/kenn-recon-pro.git](https://github.com/kenndeclouv/kenn-recon-pro.git)
-cd kenn-recon-pro
+git clone [https://github.com/kenndeclouv/kythia-vanguard.git](https://github.com/kenndeclouv/kythia-vanguard.git)
+cd kythia-vanguard
 
 # Create and activate a virtual environment
 python3 -m venv venv
@@ -128,7 +131,7 @@ python main.py quick example.com -m recon,waf,nuclei --rps 100
 
 ## ⚙️ Developer Guide: How to Add a New Module
 
-KENN-RECON Pro uses a powerful **Self-Contained Plugin Architecture** with dynamic autoloading. You **do not** need to edit `main.py` or mess with complex boilerplate to add new features!
+Kythia Vanguard uses a powerful **Self-Contained Plugin Architecture** with dynamic autoloading. You **do not** need to edit `main.py` or mess with complex boilerplate to add new features!
 
 Everything from the scanning logic to the UI rendering lives cleanly inside a single file in the `src/modules/` directory.
 For strict instructions on how to write, format, and register new modules so they seamlessly integrate with the Autoloader and Terminal UI, please read the [Developer Guidelines (RULES.md)](RULES.md).

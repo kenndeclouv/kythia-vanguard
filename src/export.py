@@ -34,7 +34,7 @@ def export_results(result: ScanResult, target: str) -> tuple[str, str]:
     # ── Markdown
     md_path = f"{base}.md"
     with open(md_path, "w", encoding="utf-8") as fh:
-        fh.write("# KENN-RECON Pro v1.0.0-rc.1 Report\n\n")
+        fh.write("# Kythia Vanguard v1.0.0-rc.1 Report\n\n")
         fh.write(f"**Target:** {result.target}  \n")
         fh.write(f"**Timestamp:** {result.timestamp}  \n")
         fh.write(f"**Security Score:** {result.score}/100\n\n---\n\n")

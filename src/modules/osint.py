@@ -42,7 +42,7 @@ def run_osint(
     breach_info: dict = {"domain_breach": [], "checked_emails": [], "api_note": ""}
 
     try:
-        headers_hibp = {"User-Agent": "KENN-RECON-Pro/1.0.0-rc.1"}
+        headers_hibp = {"User-Agent": "kythia-vanguard/1.0.0-rc.1"}
         if HIBP_API_KEY:
             headers_hibp["hibp-api-key"] = HIBP_API_KEY
 

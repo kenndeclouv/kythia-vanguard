@@ -1,4 +1,4 @@
-# 🚨 KENN-RECON Pro - DEVELOPER & AI GUIDELINES 🚨
+# 🚨 Kythia Vanguard - DEVELOPER & AI GUIDELINES 🚨
 
 **READ THIS BEFORE WRITING ANY CODE FOR THIS PROJECT!**
 This project uses a custom **Dynamic Autoloading Architecture**. Do NOT use standard Python package boilerplate. Follow these strict rules to ensure your module is loaded successfully.
