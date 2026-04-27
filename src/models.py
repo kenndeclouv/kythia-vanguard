@@ -47,3 +47,9 @@ class ScanResult:
     # ── v2: nuclei
     nuclei_findings: list = field(default_factory=list)
     nuclei_summary: dict = field(default_factory=dict)
+
+    # ── v3: new modules
+    debug_findings: list = field(default_factory=list)  # Framework debug leaks
+    infra_findings: list = field(default_factory=list)  # Docker/Redis/Infra exposure
+    webhook_findings: list = field(default_factory=list)  # Discord/Telegram/Slack creds
+    git_findings: dict = field(default_factory=dict)  # Exposed .git dump results

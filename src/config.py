@@ -132,5 +132,18 @@ SCAN_MODULES = [
     ("waf", "WAF / CDN Detection  — Fingerprint protective layers"),
     ("cloud", "Cloud & Bucket Sniper — Public bucket enumeration"),
     ("graphql", "GraphQL Schema Dumper — Introspection query"),
-    ("sourcemap", "Source‑Map Unpacker — Retrieve hidden *.js.map files"),
+    ("sourcemap", "Source\u2011Map Unpacker — Retrieve hidden *.js.map files"),
+    (
+        "debug",
+        "Debug Sniper         — Hunt Laravel/Node/Spring debug pages & env leaks",
+    ),
+    (
+        "infra",
+        "Infra Exposure       — Docker API · Redis · MongoDB · K8s · etcd · Consul",
+    ),
+    ("webhook", "Webhook Hijacker     — Discord · Telegram · Slack credential hunter"),
+    (
+        "git_dumper",
+        "Git Dumper           — Reconstruct source code from exposed /.git/",
+    ),
 ]

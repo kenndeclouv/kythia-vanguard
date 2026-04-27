@@ -1,26 +1,86 @@
 """
-src/modules/spider.py — Module 9: Recursive deep crawler + FAST SECRET HUNTER.
+src/modules/spider.py — Deep Crawler + Secret Hunter (v2, high-speed).
+
+Architecture: Pipeline-based concurrent crawl.
+  - One persistent ThreadPoolExecutor (no per-batch creation overhead)
+  - Spider-specific rate limiter (25 RPS) — separate from global 5 RPS
+  - Producer-consumer queue: workers submit new URLs immediately as they land,
+    no idle waiting for a full batch to finish
+  - URL pre-filter: skip known static extensions before touching the network
+  - Response cap: 512 KB HTML, 1 MB JS (was 5 MB flat)
+  - BeautifulSoup parse only once per page (was calling it twice)
+  - Hard wall-clock timeout: aborts cleanly after MAX_SECONDS seconds
 """
 
-import re
-import urllib.parse
+from __future__ import annotations
 
+import re
+import threading
+import time
+import urllib.parse
 from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from bs4 import BeautifulSoup
+from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Optional
 
+from bs4 import BeautifulSoup
 from rich import box
 from rich.markup import escape
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.table import Table
 
-from src.config import console, C, rate_limiter, SESSION, TIMEOUT
+from src.config import RateLimiter, SESSION, TIMEOUT, C, console
 from src.models import ScanResult
 
-# 🔥 Pre-Compile Regex biar 100x lebih ngebut!
-JS_API_PATTERNS = [
+# ─────────────────────────────────────────────────────────────────
+# Spider-specific settings (intentionally more aggressive than global)
+# ─────────────────────────────────────────────────────────────────
+
+_SPIDER_RPS: float = 25.0      # requests per second ceiling
+_MAX_WORKERS: int = 25         # concurrent threads
+_MAX_PAGES: int = 120          # hard page cap
+_MAX_SECONDS: int = 90         # wall-clock abort (seconds)
+_HTML_CAP: int = 512_000       # 512 KB cap for HTML responses
+_JS_CAP: int = 1_000_000       # 1 MB cap for JS responses
+_REQUEST_TIMEOUT: int = 6      # per-request timeout (tighter than global 8 s)
+
+# Spider gets its own rate limiter — doesn't pollute the global 5 RPS bucket
+_spider_rl = RateLimiter(rps=_SPIDER_RPS, use_jitter=False)
+
+# ─────────────────────────────────────────────────────────────────
+# Static-asset pre-filter  (skip before touching the network)
+# ─────────────────────────────────────────────────────────────────
+
+_SKIP_EXTENSIONS = frozenset(
+    [
+        # Media
+        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".ico", ".svg",
+        ".mp4", ".webm", ".ogg", ".mp3", ".wav",
+        # Documents / archives
+        ".pdf", ".zip", ".tar", ".gz", ".rar", ".7z", ".dmg", ".exe",
+        # Fonts
+        ".woff", ".woff2", ".ttf", ".eot", ".otf",
+        # Data / compiled
+        ".xml", ".rss", ".atom", ".swf", ".apk", ".ipa",
+        # Stylesheets (no links/endpoints inside worth crawling)
+        ".css",
+    ]
+)
+
+# Content-type fragments to bail on immediately after headers arrive
+_SKIP_CONTENT_TYPES = (
+    "image/", "video/", "audio/", "font/",
+    "application/zip", "application/pdf", "application/octet-stream",
+    "application/x-tar", "application/gzip",
+)
+
+# ─────────────────────────────────────────────────────────────────
+# Compiled regex patterns
+# ─────────────────────────────────────────────────────────────────
+
+_PARAM_PATTERN = re.compile(r"[?&]([a-zA-Z_][a-zA-Z0-9_]{0,30})=")
+
+_JS_API_PATTERNS = [
     re.compile(p)
     for p in [
         r"""(?:fetch|axios\.(?:get|post|put|delete|patch)|http\.(?:get|post))\s*\(["'`]([^"'`\s)]{5,100})["'`]""",
@@ -28,201 +88,321 @@ JS_API_PATTERNS = [
         r"""["'`](/v\d+/[^\s"'`>)]{3,80})["'`]""",
         r"""["'`](/graphql[^\s"'`>)]{0,40})["'`]""",
         r"""["'`](/rest/[^\s"'`>)]{3,60})["'`]""",
+        r"""["'`](/admin[^\s"'`>)]{0,60})["'`]""",
         r"""endpoint\s*[:=]\s*["'`]([^"'`\s]{5,100})["'`]""",
-        r"""url\s*[:=]\s*["'`]([/][^"'`\s]{3,80})["'`]""",
+        r"""(?:url|path|route|href)\s*[:=]\s*["'`]([/][^"'`\s]{3,80})["'`]""",
+        r"""["'`](https?://[^\s"'`>)]{10,120})["'`]""",
     ]
 ]
 
-PARAM_PATTERN = re.compile(r"[?&]([a-zA-Z_][a-zA-Z0-9_]{0,30})=")
-
-SECRET_PATTERNS = {
-    "AWS Access Key": re.compile(r"AKIA[0-9A-Z]{16}"),
-    "Stripe Secret": re.compile(r"sk_live_[0-9a-zA-Z]{24}"),
-    "Google API Key": re.compile(r"AIza[0-9A-Za-z-_]{35}"),
-    "GitHub Token": re.compile(r"ghp_[0-9a-zA-Z]{36}"),
-    "RSA Private Key": re.compile(r"-----BEGIN RSA PRIVATE KEY-----"),
+_SECRET_PATTERNS: dict[str, re.Pattern] = {
+    "AWS Access Key":     re.compile(r"AKIA[0-9A-Z]{16}"),
+    "AWS Secret Key":     re.compile(r"(?i)aws.{0,20}secret.{0,20}['\"][0-9a-zA-Z/+]{40}['\"]"),
+    "Stripe Secret":      re.compile(r"sk_live_[0-9a-zA-Z]{24}"),
+    "Google API Key":     re.compile(r"AIza[0-9A-Za-z\-_]{35}"),
+    "GitHub Token":       re.compile(r"ghp_[0-9a-zA-Z]{36}"),
+    "GitHub OAuth":       re.compile(r"gho_[0-9a-zA-Z]{36}"),
+    "RSA Private Key":    re.compile(r"-----BEGIN (?:RSA )?PRIVATE KEY-----"),
+    "JWT Token":          re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"),
+    "Firebase URL":       re.compile(r"https://[a-zA-Z0-9\-]+\.firebaseio\.com"),
+    "Heroku API Key":     re.compile(r"(?i)heroku.{0,30}[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"),
+    "Mailgun API Key":    re.compile(r"key-[0-9a-zA-Z]{32}"),
+    "Twilio Account SID": re.compile(r"AC[0-9a-zA-Z]{32}"),
 }
 
+# ─────────────────────────────────────────────────────────────────
+# URL helpers
+# ─────────────────────────────────────────────────────────────────
 
-def _is_internal(url: str, hostname: str) -> bool:
-    try:
-        parsed = urllib.parse.urlparse(url)
-        return parsed.hostname is not None and (
-            parsed.hostname == hostname or parsed.hostname.endswith("." + hostname)
-        )
-    except Exception:
+
+def _is_internal(parsed_hostname: str | None, hostname: str) -> bool:
+    if not parsed_hostname:
         return False
+    return parsed_hostname == hostname or parsed_hostname.endswith("." + hostname)
 
 
-def _normalise_url(url: str, base_url: str, hostname: str) -> Optional[str]:
+def _normalise(raw: str, base: str, hostname: str) -> Optional[str]:
+    """Resolve and validate a URL. Returns None if external or non-http(s)."""
     try:
-        full = urllib.parse.urljoin(base_url, url)
-        parsed = urllib.parse.urlparse(full)
-        if parsed.scheme not in ("http", "https") or not _is_internal(full, hostname):
+        full = urllib.parse.urljoin(base, raw)
+        p = urllib.parse.urlparse(full)
+        if p.scheme not in ("http", "https"):
             return None
-        return urllib.parse.urlunparse(parsed._replace(fragment=""))
+        if not _is_internal(p.hostname, hostname):
+            return None
+        # Drop fragment, normalise trailing slash
+        return urllib.parse.urlunparse(p._replace(fragment=""))
     except Exception:
         return None
 
 
-def _extract_links(html: str, base_url: str, hostname: str) -> set[str]:
-    links = set()
+def _should_skip_url(url: str) -> bool:
+    """True if the URL points to a static asset we never need to fetch."""
+    try:
+        path = urllib.parse.urlparse(url).path.lower()
+        ext = "." + path.rsplit(".", 1)[-1] if "." in path else ""
+        return ext in _SKIP_EXTENSIONS
+    except Exception:
+        return False
+
+
+# ─────────────────────────────────────────────────────────────────
+# Content extractors
+# ─────────────────────────────────────────────────────────────────
+
+
+def _extract_links_fast(html: str, base_url: str, hostname: str) -> set[str]:
+    """Single BeautifulSoup parse — returns all internal URLs found in the page."""
+    links: set[str] = set()
     try:
         soup = BeautifulSoup(html, "html.parser")
         for tag in soup.find_all(["a", "link", "script", "form", "iframe", "frame"]):
-            for attr in ("href", "src", "action"):
+            for attr in ("href", "src", "action", "data-href", "data-url"):
                 raw = tag.get(attr)
-                if raw:
-                    norm = _normalise_url(raw, base_url, hostname)
-                    if norm:
-                        links.add(norm)
+                if not raw or not isinstance(raw, str):
+                    continue
+                norm = _normalise(raw, base_url, hostname)
+                if norm and not _should_skip_url(norm):
+                    links.add(norm)
     except Exception:
         pass
     return links
 
 
 def _extract_js_endpoints(js_text: str, base_url: str, hostname: str) -> list[str]:
-    endpoints = []
-    for pat in JS_API_PATTERNS:
+    endpoints: set[str] = set()
+    for pat in _JS_API_PATTERNS:
         for m in pat.finditer(js_text):
             ep = m.group(1)
-            if len(ep) < 3 or ep.startswith("//") or "." in ep.split("/")[-1][-5:]:
+            if len(ep) < 3 or ep.startswith("//"):
                 continue
-            norm = _normalise_url(ep, base_url, hostname)
+            # Skip strings that look like file paths with extensions (e.g. image.png)
+            last_seg = ep.rsplit("/", 1)[-1]
+            if "." in last_seg and last_seg.rsplit(".", 1)[-1].lower() in {
+                "png", "jpg", "gif", "css", "ico", "woff", "ttf"
+            }:
+                continue
+            norm = _normalise(ep, base_url, hostname)
             if norm:
-                endpoints.append(norm)
+                endpoints.add(norm)
             elif ep.startswith("/"):
-                endpoints.append(ep)
-    return list(set(endpoints))
+                endpoints.add(ep)
+    return list(endpoints)
 
 
-def _extract_params(url: str) -> list[str]:
-    return PARAM_PATTERN.findall(urllib.parse.urlparse(url).query)
+def _check_secrets(text: str, url: str, progress) -> None:
+    """Scan a block of text for leaked credentials and print an alert."""
+    for name, pat in _SECRET_PATTERNS.items():
+        m = pat.search(text)
+        if m:
+            snippet = m.group(0)[:12] + "…[REDACTED]"
+            progress.console.print(
+                Panel(
+                    f"[bold red]LEAKED SECRET DETECTED![/bold red]\n"
+                    f"URL  : [cyan]{url}[/cyan]\n"
+                    f"Type : [yellow]{name}[/yellow]\n"
+                    f"Value: {snippet}",
+                    title="🔑 SECRET HUNTER",
+                    border_style="red",
+                )
+            )
 
 
-def run_deep_crawler(
+# ─────────────────────────────────────────────────────────────────
+# Core fetch worker
+# ─────────────────────────────────────────────────────────────────
+
+
+def _fetch(url: str, hostname: str, progress) -> tuple[str, bool, set[str], list[str]]:
+    """
+    Fetch one URL, return:
+      (url, success, new_links, js_endpoints_found)
+    """
+    _spider_rl.wait()
+    try:
+        resp = SESSION.get(
+            url,
+            timeout=_REQUEST_TIMEOUT,
+            allow_redirects=True,
+            stream=True,
+        )
+    except Exception:
+        return url, False, set(), []
+
+    try:
+        ct = resp.headers.get("Content-Type", "").lower()
+
+        # Bail immediately on binary content
+        if any(ct.startswith(skip) for skip in _SKIP_CONTENT_TYPES):
+            resp.close()
+            return url, False, set(), []
+
+        is_html = "html" in ct
+        is_js   = "javascript" in ct or "ecmascript" in ct
+
+        if not (is_html or is_js):
+            # Only crawl html + js
+            resp.close()
+            return url, False, set(), []
+
+        cap = _HTML_CAP if is_html else _JS_CAP
+        raw = resp.raw.read(cap, decode_content=True)
+        text = raw.decode("utf-8", errors="ignore")
+    except Exception:
+        return url, False, set(), []
+    finally:
+        resp.close()
+
+    # Secret scan (HTML + JS)
+    _check_secrets(text, url, progress)
+
+    new_links: set[str] = set()
+    js_eps: list[str] = []
+
+    if is_html:
+        new_links = _extract_links_fast(text, url, hostname)
+    elif is_js:
+        js_eps = _extract_js_endpoints(text, url, hostname)
+
+    return url, True, new_links, js_eps
+
+
+# ─────────────────────────────────────────────────────────────────
+# Module entry point
+# ─────────────────────────────────────────────────────────────────
+
+
+def run_spider(
     target_url: str,
     hostname: str,
     result: ScanResult,
     progress,
     task,
-    max_pages: int = 80,
 ) -> None:
-    visited, queue, sitemap, js_eps, params = (
-        set(),
-        {target_url},
-        [],
-        [],
-        defaultdict(set),
+    """
+    Pipeline-based deep crawler.
+
+    Instead of processing fixed batches and waiting, we keep a persistent
+    thread pool alive and immediately re-submit discovered URLs as futures —
+    workers are never idle waiting for a batch boundary.
+    """
+    visited:   set[str]             = set()
+    queued:    set[str]             = {target_url}
+    sitemap:   list[str]            = []
+    js_eps:    set[str]             = set()
+    params:    defaultdict[str, set[str]] = defaultdict(set)
+
+    lock = threading.Lock()
+    pending_futures: set[Future] = set()
+
+    deadline = time.monotonic() + _MAX_SECONDS
+
+    progress.update(
+        task,
+        description=f"[cyan]Spider:[/cyan] Launching pipeline ({_MAX_WORKERS} workers, {_SPIDER_RPS:.0f} RPS)…",
     )
-    progress.update(task, description="[cyan]Spider:[/cyan] Starting recursive crawl…")
 
-    def _fetch_page(url: str):
-        rate_limiter.wait()
+    def _handle_result(fut: Future) -> None:
+        """Callback: process result and enqueue newly discovered URLs."""
+        nonlocal queued
         try:
-            resp = SESSION.get(url, timeout=TIMEOUT, allow_redirects=True, stream=True)
+            url, ok, new_links, new_eps = fut.result()
         except Exception:
-            return url, None, set(), []
+            return
 
-        if not resp.ok:
-            return url, None, set(), []
+        with lock:
+            if ok:
+                sitemap.append(url)
+                url_params = _PARAM_PATTERN.findall(urllib.parse.urlparse(url).query)
+                if url_params:
+                    params[url].update(url_params)
+            js_eps.update(new_eps)
 
-        content_type = resp.headers.get("Content-Type", "").lower()
+            # Enqueue new internal links immediately (pipeline!)
+            if time.monotonic() < deadline:
+                for link in new_links:
+                    if link not in visited and link not in queued and not _should_skip_url(link):
+                        if len(visited) + len(queued) < _MAX_PAGES * 2:
+                            queued.add(link)
 
-        if any(
-            ext in content_type
-            for ext in [
-                "image",
-                "video",
-                "audio",
-                "zip",
-                "pdf",
-                "octet-stream",
-                "tar",
-                "rar",
-            ]
-        ):
-            resp.close()
-            return url, None, set(), []
+    with ThreadPoolExecutor(max_workers=_MAX_WORKERS, thread_name_prefix="spider") as pool:
+        # Seed the pool with the first URL
+        with lock:
+            first = queued.pop()
+            visited.add(first)
+            fut = pool.submit(_fetch, first, hostname, progress)
+            pending_futures.add(fut)
+            fut.add_done_callback(lambda f: pending_futures.discard(f))
+            fut.add_done_callback(_handle_result)
 
-        try:
-            # 5MB MAX,
-            raw_content = resp.raw.read(5000000, decode_content=True)
-            text_to_scan = raw_content.decode("utf-8", errors="ignore")
-        except Exception:
-            text_to_scan = ""
-        finally:
-            resp.close()
+        while True:
+            # Check hard limits
+            if time.monotonic() >= deadline:
+                progress.console.print(
+                    f"  [{C['warn']}]⏱ Spider: wall-clock limit ({_MAX_SECONDS}s) reached — "
+                    f"{len(visited)} pages crawled.[/{C['warn']}]"
+                )
+                break
 
-        links, js_endpoints = set(), []
+            if len(visited) >= _MAX_PAGES:
+                break
 
-        if "html" in content_type or "javascript" in content_type:
-            for s_name, s_pat in SECRET_PATTERNS.items():
-                matches = set(s_pat.findall(text_to_scan))
-                if matches:
-                    progress.console.print(
-                        Panel(
-                            f"[bold red]LEAKED SECRET DETECTED![/bold red]\n"
-                            f"URL   : [cyan]{url}[/cyan]\n"
-                            f"Type  : [yellow]{s_name}[/yellow]\n"
-                            f"Value : {list(matches)[0][:10]}...[REDACTED]",
-                            title="SECRET HUNTER",
-                            border_style="red",
-                        )
-                    )
+            # Submit all pending queued URLs
+            with lock:
+                to_submit = list(queued - visited)
+                queued -= set(to_submit)
+                for url in to_submit:
+                    if len(visited) >= _MAX_PAGES:
+                        break
+                    visited.add(url)
+                    fut = pool.submit(_fetch, url, hostname, progress)
+                    pending_futures.add(fut)
+                    fut.add_done_callback(lambda f: pending_futures.discard(f))
+                    fut.add_done_callback(_handle_result)
 
-        if "html" in content_type:
-            links = _extract_links(text_to_scan, url, hostname)
-            try:
-                # Parsing HTML pake BeautifulSoup
-                soup = BeautifulSoup(text_to_scan, "html.parser")
-                for script in soup.find_all("script", src=True):
-                    js_url = _normalise_url(script["src"], url, hostname)
-                    if js_url:
-                        links.add(js_url)
-            except Exception:
-                pass
-        elif "javascript" in content_type:
-            js_endpoints = _extract_js_endpoints(text_to_scan, url, hostname)
+            # Update progress
+            done = len(sitemap)
+            pct = min(50, int((done / _MAX_PAGES) * 50))
+            progress.update(
+                task,
+                description=(
+                    f"[cyan]Spider:[/cyan] {done}/{_MAX_PAGES} pages "
+                    f"· {len(js_eps)} JS endpoints "
+                    f"· {len(queued)} queued…"
+                ),
+                completed=pct,
+            )
 
-        return url, resp, links, js_endpoints
+            # If nothing in flight and nothing queued, we're done
+            with lock:
+                nothing_queued = len(queued) == 0
+            if nothing_queued and len(pending_futures) == 0:
+                break
 
-    while queue and len(visited) < max_pages:
-        batch = list(queue - visited)[:15]  # Gedein batch biar lebih ganas
-        queue -= set(batch)
+            time.sleep(0.05)  # Tiny poll sleep to avoid busy-waiting
 
-        with ThreadPoolExecutor(max_workers=15) as pool:
-            futures = {pool.submit(_fetch_page, url): url for url in batch}
-            for future in as_completed(futures):
-                url, resp, links, js_endpoints_found = future.result()
-                visited.add(url)
+    # Persist results
+    result.sitemap       = sorted(set(sitemap))
+    result.js_endpoints  = sorted(js_eps)
+    result.parameters    = {url: sorted(p) for url, p in params.items()}
 
-                if resp is not None:
-                    sitemap.append(url)
-                    url_params = _extract_params(url)
-                    if url_params:
-                        params[url].update(url_params)
+    progress.update(task, completed=50)
 
-                queue.update(links - visited)
-                js_eps.extend(js_endpoints_found)
 
-        done_pct = min(50, int((len(visited) / max_pages) * 50))
-        progress.update(
-            task,
-            description=f"[cyan]Spider:[/cyan] {len(visited)}/{max_pages} pages · {len(js_eps)} JS endpoints…",
-            completed=done_pct,
-        )
+# ─────────────────────────────────────────────────────────────────
+# Backward-compat alias (main.py autoloader looks for any run_* func)
+# ─────────────────────────────────────────────────────────────────
+run_deep_crawler = run_spider
 
-    result.sitemap = sorted(set(sitemap))
-    result.js_endpoints = sorted(set(js_eps))
-    result.parameters = {url: sorted(p) for url, p in params.items()}
+
+# ─────────────────────────────────────────────────────────────────
+# Display function
+# ─────────────────────────────────────────────────────────────────
 
 
 def display_spider(result: ScanResult) -> None:
     console.print(
-        Rule(
-            f"[{C['accent']}]🕸️   DEEP CRAWLER RESULTS[/{C['accent']}]", style="magenta"
-        )
+        Rule(f"[{C['accent']}]🕸️   DEEP CRAWLER RESULTS[/{C['accent']}]", style="magenta")
     )
 
     # ── Sitemap
@@ -233,12 +413,10 @@ def display_spider(result: ScanResult) -> None:
     if result.sitemap:
         sm_t = Table(box=box.MINIMAL, border_style="dim", header_style=C["subtle"])
         sm_t.add_column("URL", style=C["warn"])
-        for url in result.sitemap[:30]:
+        for url in result.sitemap[:40]:
             sm_t.add_row(escape(url))
-        if len(result.sitemap) > 30:
-            sm_t.add_row(
-                f"[dim]… and {len(result.sitemap) - 30} more in JSON report[/dim]"
-            )
+        if len(result.sitemap) > 40:
+            sm_t.add_row(f"[dim]… and {len(result.sitemap) - 40} more in JSON report[/dim]")
         console.print(sm_t)
     console.print()
 
@@ -250,11 +428,11 @@ def display_spider(result: ScanResult) -> None:
             f"Endpoints found in JS files ({len(result.js_endpoints)} unique)",
             style=C["accent"],
         )
-        for ep in result.js_endpoints[:40]:
+        for ep in result.js_endpoints[:50]:
             js_t.add_row(escape(ep))
-        if len(result.js_endpoints) > 40:
+        if len(result.js_endpoints) > 50:
             js_t.add_row(
-                f"[dim]… and {len(result.js_endpoints) - 40} more in JSON report[/dim]"
+                f"[dim]… and {len(result.js_endpoints) - 50} more in JSON report[/dim]"
             )
         console.print(js_t)
     else:
@@ -265,10 +443,10 @@ def display_spider(result: ScanResult) -> None:
     console.print(Rule("[bold]Discovered Query Parameters[/bold]", style="dim"))
     if result.parameters:
         pm_t = Table(box=box.MINIMAL, border_style="dim", header_style=C["subtle"])
-        pm_t.add_column("URL", style=C["warn"], width=60)
+        pm_t.add_column("URL", style=C["warn"], width=65)
         pm_t.add_column("Parameters", style=C["accent"])
-        for url, parms in list(result.parameters.items())[:20]:
-            pm_t.add_row(escape(url[:60]), ", ".join(parms))
+        for url, parms in list(result.parameters.items())[:25]:
+            pm_t.add_row(escape(url[:65]), ", ".join(parms))
         console.print(pm_t)
     else:
         console.print("  [dim]No query parameters found.[/dim]")
