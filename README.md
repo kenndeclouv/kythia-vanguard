@@ -1,10 +1,31 @@
-# KENN-RECON Pro v1.0.0-rc.1
+```text
+╭─────────────────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                                     │
+│        ██╗  ██╗███████╗███╗   ██╗███╗   ██╗      ██████╗ ███████╗ ██████╗ ██████╗ ███╗   ██╗        │
+│        ██║ ██╔╝██╔════╝████╗  ██║████╗  ██║      ██╔══██╗██╔════╝██╔════╝██╔═══██╗████╗  ██║        │
+│        █████╔╝ █████╗  ██╔██╗ ██║██╔██╗ ██║█████╗██████╔╝█████╗  ██║     ██║   ██║██╔██╗ ██║        │
+│        ██╔═██╗ ██╔══╝  ██║╚██╗██║██║╚██╗██║╚════╝██╔══██╗██╔══╝  ██║     ██║   ██║██║╚██╗██║        │
+│        ██║  ██╗███████╗██║ ╚████║██║ ╚████║      ██║  ██║███████╗╚██████╗╚██████╔╝██║ ╚████║        │
+│        ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚═══╝      ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝        │
+│                                        ╔═══╗ ╦═╗ ╔═╗                                                │
+│                                        ╠═══╝ ╠╦╝ ║ ║                                                │
+│                                        ╩     ╩╚═ ╚═╝                                                │
+│       Author  : Kenndeclouv                                                                         │
+│       Github  : https://github.com/kenndeclouv                                                      │
+│       Website : https://kenndeclouv.com                                                             │
+│       Version : 1.0.0-rc.1                                                                          │
+│                                                                                                     │
+╰────────────────────── For authorized security testing only — use responsibly ───────────────────────╯
+```
 
 **Advanced Automated Reconnaissance & Security Auditor**
 
 KENN-RECON Pro is a modular, high-performance, and visually stunning CLI tool designed for automated web application reconnaissance and security auditing. Built with a dynamic autoloading architecture, it seamlessly integrates custom Python modules and powerful third-party engines like `nuclei` to deliver comprehensive security reports directly to your terminal.
 
-> **⚠️ LEGAL DISCLAIMER:** > This tool is intended EXCLUSIVELY for authorized security testing, bug-bounty programs, and penetration tests where explicit written permission has been granted. The authors accept NO liability for misuse.
+> [!WARNING]
+> **LEGAL DISCLAIMER**
+> 
+> This tool is intended EXCLUSIVELY for authorized security testing, bug-bounty programs, and penetration tests where explicit written permission has been granted. The authors accept NO liability for misuse.
 
 ---
 
@@ -107,20 +128,12 @@ python main.py quick example.com -m recon,waf,nuclei --rps 100
 
 ## ⚙️ Developer Guide: How to Add a New Module
 
-KENN-RECON Pro uses a dynamic autoloader. You **do not** need to edit `main.py` to add new features!
+KENN-RECON Pro uses a powerful **Self-Contained Plugin Architecture** with dynamic autoloading. You **do not** need to edit `main.py` or mess with complex boilerplate to add new features!
 
-1. Create a new file in `src/modules/` (e.g., `src/modules/subtakeover.py`).
-2. Inside that file, create a function starting with `run_` (e.g., `def run_subtakeover(target_url, result, progress, task):`).
-3. Add your display logic in `src/ui/display.py` with a function starting with `display_` (e.g., `def display_subtakeover(result):`).
-4. Register your module in `src/config.py` under the `SCAN_MODULES` list:
-   ```python
-   SCAN_MODULES = [
-       # ... other modules
-       ("subtakeover", "Subdomain Takeover — Scans for dangling DNS records"),
-   ]
-   ```
-The core engine will automatically load your module, inject the required parameters, add it to the progress bar, and display the results!
+Everything from the scanning logic to the UI rendering lives cleanly inside a single file in the `src/modules/` directory.
+For strict instructions on how to write, format, and register new modules so they seamlessly integrate with the Autoloader and Terminal UI, please read the [Developer Guidelines (RULES.md)](RULES.md).
 
 ---
-**Author:** Kenndeclouv ([Kenndeclouv Tech](https://kenndeclouv.com))
-**License:** MIT
+
+- **Author:** Kenndeclouv ([Kenndeclouv Tech](https://kenndeclouv.com))
+- **License:** MIT
