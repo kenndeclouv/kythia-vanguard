@@ -146,4 +146,38 @@ SCAN_MODULES = [
         "git_dumper",
         "Git Dumper           — Reconstruct source code from exposed /.git/",
     ),
+    ("takeover", "Takeover Sniper      — Dangling CNAME subdomain takeover checker"),
+    (
+        "js_secrets",
+        "JS Secret Hunter     — Stripe · AWS · Twilio · Google Maps key leak",
+    ),
+    ("cors", "CORS Hijacker        — Reflected origin · wildcard · credential bypass"),
+    (
+        "jwt_cracker",
+        "JWT Cracker          — Decode payload · crack HMAC secret · flag alg:none",
+    ),
+    (
+        "stress",
+        "Stress Test          — Load sim 100→250→500→1000 VUs · latency · crash detect",
+    ),
+    (
+        "dos",
+        "Brutal DoS Hunter    — Slowloris · DB Pagination Exhaustion · XML-RPC Amplification",
+    ),
+    (
+        "bruteforce",
+        "Login Brute Force    — Auto-detect login forms · Credential spray · Lockout detect",
+    ),
+    (
+        "traversal",
+        "LFI Sniper           — Path traversal payloads · /etc/passwd · win.ini",
+    ),
+    (
+        "api_spec",
+        "API Sec Hunter       — Bruteforce Swagger · OpenAPI specs · Redoc",
+    ),
+    (
+        "oauth",
+        "OAuth Manipulator    — Steal tokens via Open Redirect · Missing state CSRF",
+    ),
 ]

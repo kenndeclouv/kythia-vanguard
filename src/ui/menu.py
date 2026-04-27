@@ -2,6 +2,7 @@
 src/ui/menu.py — Interactive prompt-toolkit menu for target + module selection.
 """
 
+import os
 import sys
 
 from prompt_toolkit import prompt as ptk_prompt
@@ -44,16 +45,20 @@ def interactive_menu() -> tuple[str, list[str]]:
         console.print("[bold red]No target provided. Exiting.[/bold red]")
         sys.exit(0)
 
+    values = [("ALL", "✓  SELECT ALL MODULES")] + SCAN_MODULES
     result = checkboxlist_dialog(
         title="Kythia Vanguard v1.0.0-rc.1 — Select Scan Modules",
         text="Use SPACE to toggle, ENTER to confirm, TAB to switch focus:",
-        values=SCAN_MODULES,
+        values=values,
         style=PTK_STYLE,
     ).run()
 
     if not result:
         console.print("[bold yellow]No modules selected. Exiting.[/bold yellow]")
         sys.exit(0)
+
+    if "ALL" in result:
+        result = [mod_id for mod_id, _ in SCAN_MODULES]
 
     rps_choice = radiolist_dialog(
         title="Rate Limit (requests / second)",
@@ -63,11 +68,23 @@ def interactive_menu() -> tuple[str, list[str]]:
             (5, "Normal   —  5 req/s  (balanced)"),
             (10, "Fast     — 10 req/s  (use only on your own infra)"),
             (100, "BRUTAL   — 100 req/s (insanely crazy - may crash servers)"),
+            (10000, "DOOMSDAY — 10000 req/s (Nuclear option - guaranteed takedown)"),
         ],
         style=PTK_STYLE,
     ).run()
 
     if rps_choice:
         rate_limiter.delay = 1.0 / rps_choice
+        if rps_choice == 100:
+            os.environ["BRUTAL"] = "1"
+            console.print(
+                "[bold red blink] ☠️ BRUTAL MODE ENABLED — No limits, infinite loops active![/bold red blink]"
+            )
+        elif rps_choice == 10000:
+            os.environ["DOOMSDAY"] = "1"
+            os.environ["BRUTAL"] = "1"  # Doomsday implies brutal
+            console.print(
+                "[bold white on red blink] ☢️ DOOMSDAY MODE ENABLED — NUCLEAR OPTION ENGAGED! [/bold white on red blink]"
+            )
 
     return target, result

@@ -1,22 +1,23 @@
 #!/usr/bin/env python3
 """
-╭──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╮
-│                                                                                                                                              │
-│                             ██╗  ██╗███████╗███╗   ██╗███╗   ██╗      ██████╗ ███████╗ ██████╗ ██████╗ ███╗   ██╗                            │
-│                             ██║ ██╔╝██╔════╝████╗  ██║████╗  ██║      ██╔══██╗██╔════╝██╔════╝██╔═══██╗████╗  ██║                            │
-│                             █████╔╝ █████╗  ██╔██╗ ██║██╔██╗ ██║█████╗██████╔╝█████╗  ██║     ██║   ██║██╔██╗ ██║                            │
-│                             ██╔═██╗ ██╔══╝  ██║╚██╗██║██║╚██╗██║╚════╝██╔══██╗██╔══╝  ██║     ██║   ██║██║╚██╗██║                            │
-│                             ██║  ██╗███████╗██║ ╚████║██║ ╚████║      ██║  ██║███████╗╚██████╗╚██████╔╝██║ ╚████║                            │
-│                             ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝╚═╝  ╚═══╝      ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝                            │
-│                                                             ╔═══╗ ╦═╗ ╔═╗                                                                    │
-│                                                             ╠═══╝ ╠╦╝ ║ ║                                                                    │
-│                                                             ╩     ╩╚═ ╚═╝                                                                    │
-│                            Author  : Kenndeclouv                                                                                             │
-│                            Github  : https://github.com/kenndeclouv                                                                          │
-│                            Website : https://kenndeclouv.com                                                                                 │
-│                            Version : 1.0.0-rc.1                                                                                              │
-│                                                                                                                                              │
-╰─────────────────────────────────────────── For authorized security testing only — use responsibly ───────────────────────────────────────────╯
+╭──────────────────────────────────────────────────────────────────────────────────────────╮
+│                                                                                          │
+│    ██╗  ██╗     ██╗   ██╗ █████╗ ███╗   ██╗ ██████╗ ██╗   ██╗ █████╗ ██████╗ ██████╗     │
+│    ██║ ██╔╝     ██║   ██║██╔══██╗████╗  ██║██╔════╝ ██║   ██║██╔══██╗██╔══██╗██╔══██╗    │
+│    █████╔╝█████╗██║   ██║███████║██╔██╗ ██║██║  ███╗██║   ██║███████║██████╔╝██║  ██║    │
+│    ██╔═██╗╚════╝╚██╗ ██╔╝██╔══██║██║╚██╗██║██║   ██║██║   ██║██╔══██║██╔══██╗██║  ██║    │
+│    ██║  ██╗      ╚████╔╝ ██║  ██║██║ ╚████║╚██████╔╝╚██████╔╝██║  ██║██║  ██║██████╔╝    │
+│    ╚═╝  ╚═╝       ╚═══╝  ╚═╝  ╚═╝╚═╝  ╚═══╝ ╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝     │
+│                                                                                          │
+│                   Advanced Automated Reconnaissance & Security Auditor                   │
+│                                   A Kythia Ecosystem                                     │
+│                                                                                          │
+│    Author  : Kenndeclouv                                                                 │
+│    Github  : https://github.com/kenndeclouv                                              │
+│    Website : https://kenndeclouv.com                                                     │
+│    Version : 1.0.0-rc.1                                                                  │
+│                                                                                          │
+╰───────────────── For authorized security testing only — use responsibly ─────────────────╯
 """
 
 import argparse
@@ -43,7 +44,9 @@ from src.export import export_results
 
 import importlib.util
 
+from rich.align import Align
 from rich.panel import Panel
+from rich.text import Text
 from rich.rule import Rule
 from rich.prompt import Confirm
 from rich.progress import (
@@ -69,15 +72,24 @@ if str(SRC_DIR) not in sys.path:
 # Dependency check
 # ─────────────────────────────────────────────────────────────────
 
-required_modules = ["requests", "bs4", "rich", "prompt_toolkit"]
+required_modules = ["requests", "bs4", "rich", "prompt_toolkit", "yaml"]
 missing_modules = [
     mod for mod in required_modules if importlib.util.find_spec(mod) is None
 ]
 
 if missing_modules:
-    print(f"\n[ERROR] Missing dependencies: {', '.join(missing_modules)}")
-    print("Run:  pip install rich requests beautifulsoup4 prompt_toolkit\n")
-    sys.exit(1)
+    pkg_map = {"bs4": "beautifulsoup4", "yaml": "pyyaml"}
+    packages_to_install = [pkg_map.get(m, m) for m in missing_modules]
+    print(f"\n[!] Missing dependencies detected: {', '.join(missing_modules)}")
+    print(f"[*] Auto-installing packages: {', '.join(packages_to_install)}...")
+    import subprocess
+    try:
+        subprocess.check_call([sys.executable, "-m", "pip", "install", *packages_to_install])
+        print("[+] Dependencies installed successfully!\n")
+    except Exception as e:
+        print(f"\n[ERROR] Failed to auto-install dependencies: {e}")
+        print(f"Run manually:  pip install {' '.join(packages_to_install)}\n")
+        sys.exit(1)
 
 # ─────────────────────────────────────────────────────────────────
 # Utilities
@@ -125,8 +137,20 @@ def run_scan(target_raw: str, modules_selected: list[str]) -> None:
         short_name = mod_desc.split("—")[0].strip()
 
         try:
-            # Import file from src/modules/ according to ID in config
-            mod_obj = importlib.import_module(f"src.modules.{mod_id}")
+            try:
+                # Import file from src/modules/ according to ID in config
+                mod_obj = importlib.import_module(f"src.modules.{mod_id}")
+            except ModuleNotFoundError as e:
+                missing = e.name
+                if not missing.startswith("src."):
+                    pkg_map = {"yaml": "pyyaml", "bs4": "beautifulsoup4"}
+                    pkg_name = pkg_map.get(missing, missing)
+                    console.print(f"[{C['warn']}]⚠️ Dependency '{missing}' missing. Installing '{pkg_name}' automatically...[/{C['warn']}]")
+                    import subprocess
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", pkg_name])
+                    mod_obj = importlib.import_module(f"src.modules.{mod_id}")
+                else:
+                    raise e
 
             # Search function that starts with 'run_'
             runner_func = None
@@ -207,7 +231,18 @@ def run_scan(target_raw: str, modules_selected: list[str]) -> None:
 
         try:
             # Panggil lagi module-nya (Python otomatis pakai cache, jadi nggak bikin lemot)
-            mod_obj = importlib.import_module(f"src.modules.{mod_id}")
+            try:
+                mod_obj = importlib.import_module(f"src.modules.{mod_id}")
+            except ModuleNotFoundError as e:
+                missing = e.name
+                if not missing.startswith("src."):
+                    pkg_map = {"yaml": "pyyaml", "bs4": "beautifulsoup4"}
+                    pkg_name = pkg_map.get(missing, missing)
+                    import subprocess
+                    subprocess.check_call([sys.executable, "-m", "pip", "install", pkg_name])
+                    mod_obj = importlib.import_module(f"src.modules.{mod_id}")
+                else:
+                    raise e
 
             # Cari fungsi apapun yang namanya berawalan "display_" di dalam file module tersebut
             disp_func = None
@@ -260,15 +295,24 @@ def interactive_main() -> None:
 
     show_banner()
 
+    DISCLAIMER = r"""
+                                                                                                     
+██     ██████  ▄████  ▄████▄ ██       ████▄  ██ ▄█████ ▄█████ ██     ▄████▄ ██ ██▄  ▄██ ██████ █████▄  
+██     ██▄▄   ██  ▄▄▄ ██▄▄██ ██       ██  ██ ██ ▀▀▀▄▄▄ ██     ██     ██▄▄██ ██ ██ ▀▀ ██ ██▄▄   ██▄▄██▄ 
+██████ ██▄▄▄▄  ▀███▀  ██  ██ ██████   ████▀  ██ █████▀ ▀█████ ██████ ██  ██ ██ ██    ██ ██▄▄▄▄ ██   ██ 
+                                                                                                       
+
+                 ● This tool is for authorized security testing ONLY.
+                 ● You must have explicit written permission from the target owner.
+                 ● Unauthorized scanning may violate local and international law.
+                 ● By continuing, you confirm you have the necessary authorization.
+"""
+
     console.print(
         Panel(
-            "[bold yellow]⚠️  LEGAL DISCLAIMER[/bold yellow]\n\n"
-            "This tool is for [bold]authorized security testing ONLY[/bold].\n"
-            "You must have [bold]explicit written permission[/bold] from the target owner.\n"
-            "Unauthorized scanning may violate local and international law.\n"
-            "By continuing, you confirm you have the necessary authorization.",
+            Align.center(Text(DISCLAIMER.strip(), style="yellow")),
             border_style="yellow",
-            expand=True,
+            padding=(1, 2),
         )
     )
     console.print()

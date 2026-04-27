@@ -15,7 +15,7 @@ from src.models import ScanResult
 from src.ui.display import _severity_style
 
 try:
-    with open("words.txt") as _f:
+    with open("src/wordlists/fuzz.txt") as _f:
         FUZZ_WORDLIST = [line.strip() for line in _f if line.strip()]
 except FileNotFoundError:
     FUZZ_WORDLIST = ["/.env", "/.git/config", "/admin", "/robots.txt"]

@@ -36,13 +36,13 @@ from src.models import ScanResult
 # Spider-specific settings (intentionally more aggressive than global)
 # ─────────────────────────────────────────────────────────────────
 
-_SPIDER_RPS: float = 25.0      # requests per second ceiling
-_MAX_WORKERS: int = 25         # concurrent threads
-_MAX_PAGES: int = 120          # hard page cap
-_MAX_SECONDS: int = 90         # wall-clock abort (seconds)
-_HTML_CAP: int = 512_000       # 512 KB cap for HTML responses
-_JS_CAP: int = 1_000_000       # 1 MB cap for JS responses
-_REQUEST_TIMEOUT: int = 6      # per-request timeout (tighter than global 8 s)
+_SPIDER_RPS: float = 25.0  # requests per second ceiling
+_MAX_WORKERS: int = 25  # concurrent threads
+_MAX_PAGES: int = 120  # hard page cap
+_MAX_SECONDS: int = 90  # wall-clock abort (seconds)
+_HTML_CAP: int = 512_000  # 512 KB cap for HTML responses
+_JS_CAP: int = 1_000_000  # 1 MB cap for JS responses
+_REQUEST_TIMEOUT: int = 6  # per-request timeout (tighter than global 8 s)
 
 # Spider gets its own rate limiter — doesn't pollute the global 5 RPS bucket
 _spider_rl = RateLimiter(rps=_SPIDER_RPS, use_jitter=False)
@@ -54,14 +54,41 @@ _spider_rl = RateLimiter(rps=_SPIDER_RPS, use_jitter=False)
 _SKIP_EXTENSIONS = frozenset(
     [
         # Media
-        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".ico", ".svg",
-        ".mp4", ".webm", ".ogg", ".mp3", ".wav",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".avif",
+        ".ico",
+        ".svg",
+        ".mp4",
+        ".webm",
+        ".ogg",
+        ".mp3",
+        ".wav",
         # Documents / archives
-        ".pdf", ".zip", ".tar", ".gz", ".rar", ".7z", ".dmg", ".exe",
+        ".pdf",
+        ".zip",
+        ".tar",
+        ".gz",
+        ".rar",
+        ".7z",
+        ".dmg",
+        ".exe",
         # Fonts
-        ".woff", ".woff2", ".ttf", ".eot", ".otf",
+        ".woff",
+        ".woff2",
+        ".ttf",
+        ".eot",
+        ".otf",
         # Data / compiled
-        ".xml", ".rss", ".atom", ".swf", ".apk", ".ipa",
+        ".xml",
+        ".rss",
+        ".atom",
+        ".swf",
+        ".apk",
+        ".ipa",
         # Stylesheets (no links/endpoints inside worth crawling)
         ".css",
     ]
@@ -69,9 +96,15 @@ _SKIP_EXTENSIONS = frozenset(
 
 # Content-type fragments to bail on immediately after headers arrive
 _SKIP_CONTENT_TYPES = (
-    "image/", "video/", "audio/", "font/",
-    "application/zip", "application/pdf", "application/octet-stream",
-    "application/x-tar", "application/gzip",
+    "image/",
+    "video/",
+    "audio/",
+    "font/",
+    "application/zip",
+    "application/pdf",
+    "application/octet-stream",
+    "application/x-tar",
+    "application/gzip",
 )
 
 # ─────────────────────────────────────────────────────────────────
@@ -96,17 +129,23 @@ _JS_API_PATTERNS = [
 ]
 
 _SECRET_PATTERNS: dict[str, re.Pattern] = {
-    "AWS Access Key":     re.compile(r"AKIA[0-9A-Z]{16}"),
-    "AWS Secret Key":     re.compile(r"(?i)aws.{0,20}secret.{0,20}['\"][0-9a-zA-Z/+]{40}['\"]"),
-    "Stripe Secret":      re.compile(r"sk_live_[0-9a-zA-Z]{24}"),
-    "Google API Key":     re.compile(r"AIza[0-9A-Za-z\-_]{35}"),
-    "GitHub Token":       re.compile(r"ghp_[0-9a-zA-Z]{36}"),
-    "GitHub OAuth":       re.compile(r"gho_[0-9a-zA-Z]{36}"),
-    "RSA Private Key":    re.compile(r"-----BEGIN (?:RSA )?PRIVATE KEY-----"),
-    "JWT Token":          re.compile(r"eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"),
-    "Firebase URL":       re.compile(r"https://[a-zA-Z0-9\-]+\.firebaseio\.com"),
-    "Heroku API Key":     re.compile(r"(?i)heroku.{0,30}[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"),
-    "Mailgun API Key":    re.compile(r"key-[0-9a-zA-Z]{32}"),
+    "AWS Access Key": re.compile(r"AKIA[0-9A-Z]{16}"),
+    "AWS Secret Key": re.compile(
+        r"(?i)aws.{0,20}secret.{0,20}['\"][0-9a-zA-Z/+]{40}['\"]"
+    ),
+    "Stripe Secret": re.compile(r"sk_live_[0-9a-zA-Z]{24}"),
+    "Google API Key": re.compile(r"AIza[0-9A-Za-z\-_]{35}"),
+    "GitHub Token": re.compile(r"ghp_[0-9a-zA-Z]{36}"),
+    "GitHub OAuth": re.compile(r"gho_[0-9a-zA-Z]{36}"),
+    "RSA Private Key": re.compile(r"-----BEGIN (?:RSA )?PRIVATE KEY-----"),
+    "JWT Token": re.compile(
+        r"eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}"
+    ),
+    "Firebase URL": re.compile(r"https://[a-zA-Z0-9\-]+\.firebaseio\.com"),
+    "Heroku API Key": re.compile(
+        r"(?i)heroku.{0,30}[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    ),
+    "Mailgun API Key": re.compile(r"key-[0-9a-zA-Z]{32}"),
     "Twilio Account SID": re.compile(r"AC[0-9a-zA-Z]{32}"),
 }
 
@@ -179,7 +218,13 @@ def _extract_js_endpoints(js_text: str, base_url: str, hostname: str) -> list[st
             # Skip strings that look like file paths with extensions (e.g. image.png)
             last_seg = ep.rsplit("/", 1)[-1]
             if "." in last_seg and last_seg.rsplit(".", 1)[-1].lower() in {
-                "png", "jpg", "gif", "css", "ico", "woff", "ttf"
+                "png",
+                "jpg",
+                "gif",
+                "css",
+                "ico",
+                "woff",
+                "ttf",
             }:
                 continue
             norm = _normalise(ep, base_url, hostname)
@@ -195,13 +240,13 @@ def _check_secrets(text: str, url: str, progress) -> None:
     for name, pat in _SECRET_PATTERNS.items():
         m = pat.search(text)
         if m:
-            snippet = m.group(0)[:12] + "…[REDACTED]"
+            # snippet = m.group(0)[:12] + "…[REDACTED]"
             progress.console.print(
                 Panel(
                     f"[bold red]LEAKED SECRET DETECTED![/bold red]\n"
                     f"URL  : [cyan]{url}[/cyan]\n"
                     f"Type : [yellow]{name}[/yellow]\n"
-                    f"Value: {snippet}",
+                    f"Value: {m.group(0)}",
                     title="🔑 SECRET HUNTER",
                     border_style="red",
                 )
@@ -238,7 +283,7 @@ def _fetch(url: str, hostname: str, progress) -> tuple[str, bool, set[str], list
             return url, False, set(), []
 
         is_html = "html" in ct
-        is_js   = "javascript" in ct or "ecmascript" in ct
+        is_js = "javascript" in ct or "ecmascript" in ct
 
         if not (is_html or is_js):
             # Only crawl html + js
@@ -286,11 +331,11 @@ def run_spider(
     thread pool alive and immediately re-submit discovered URLs as futures —
     workers are never idle waiting for a batch boundary.
     """
-    visited:   set[str]             = set()
-    queued:    set[str]             = {target_url}
-    sitemap:   list[str]            = []
-    js_eps:    set[str]             = set()
-    params:    defaultdict[str, set[str]] = defaultdict(set)
+    visited: set[str] = set()
+    queued: set[str] = {target_url}
+    sitemap: list[str] = []
+    js_eps: set[str] = set()
+    params: defaultdict[str, set[str]] = defaultdict(set)
 
     lock = threading.Lock()
     pending_futures: set[Future] = set()
@@ -321,11 +366,17 @@ def run_spider(
             # Enqueue new internal links immediately (pipeline!)
             if time.monotonic() < deadline:
                 for link in new_links:
-                    if link not in visited and link not in queued and not _should_skip_url(link):
+                    if (
+                        link not in visited
+                        and link not in queued
+                        and not _should_skip_url(link)
+                    ):
                         if len(visited) + len(queued) < _MAX_PAGES * 2:
                             queued.add(link)
 
-    with ThreadPoolExecutor(max_workers=_MAX_WORKERS, thread_name_prefix="spider") as pool:
+    with ThreadPoolExecutor(
+        max_workers=_MAX_WORKERS, thread_name_prefix="spider"
+    ) as pool:
         # Seed the pool with the first URL
         with lock:
             first = queued.pop()
@@ -382,9 +433,9 @@ def run_spider(
             time.sleep(0.05)  # Tiny poll sleep to avoid busy-waiting
 
     # Persist results
-    result.sitemap       = sorted(set(sitemap))
-    result.js_endpoints  = sorted(js_eps)
-    result.parameters    = {url: sorted(p) for url, p in params.items()}
+    result.sitemap = sorted(set(sitemap))
+    result.js_endpoints = sorted(js_eps)
+    result.parameters = {url: sorted(p) for url, p in params.items()}
 
     progress.update(task, completed=50)
 
@@ -402,7 +453,9 @@ run_deep_crawler = run_spider
 
 def display_spider(result: ScanResult) -> None:
     console.print(
-        Rule(f"[{C['accent']}]🕸️   DEEP CRAWLER RESULTS[/{C['accent']}]", style="magenta")
+        Rule(
+            f"[{C['accent']}]🕸️   DEEP CRAWLER RESULTS[/{C['accent']}]", style="magenta"
+        )
     )
 
     # ── Sitemap
@@ -416,7 +469,9 @@ def display_spider(result: ScanResult) -> None:
         for url in result.sitemap[:40]:
             sm_t.add_row(escape(url))
         if len(result.sitemap) > 40:
-            sm_t.add_row(f"[dim]… and {len(result.sitemap) - 40} more in JSON report[/dim]")
+            sm_t.add_row(
+                f"[dim]… and {len(result.sitemap) - 40} more in JSON report[/dim]"
+            )
         console.print(sm_t)
     console.print()
 

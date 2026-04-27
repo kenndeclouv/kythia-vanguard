@@ -223,13 +223,13 @@ def run_webhook(
     # 🔥 Pakai data Spider — nggak perlu crawl dari nol!
     # js_endpoints = semua file .js yang ketemu waktu Spider jalan
     # sitemap      = semua internal HTML pages yang udah dikunjungi Spider
-    js_urls   = getattr(result, "js_endpoints", [])
+    js_urls = getattr(result, "js_endpoints", [])
     html_urls = getattr(result, "sitemap", []) or [target_url]
 
     # Gabungin, dedup, batasi 100 supaya nggak lemot
     sources = list(dict.fromkeys(js_urls + html_urls))[:100]
-    total   = len(sources)
-    done    = 0
+    total = len(sources)
+    done = 0
 
     if total == 0:
         progress.update(task, completed=50)

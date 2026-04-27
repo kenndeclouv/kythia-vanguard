@@ -28,8 +28,8 @@ from src.models import ScanResult
 
 # Endpoints that are likely to reveal debug pages when hit with bad input
 _TRIGGER_PATHS = [
-    "/__KENN_RECON_TRIGGER__",  # generic 404 / exception trigger
-    "/api/__KENN_RECON_TRIGGER__",
+    "/__KYTHIA_VANGUARD_TRIGGER__",  # generic 404 / exception trigger
+    "/api/__KYTHIA_VANGUARD_TRIGGER__",
     "/?XDEBUG_SESSION_START=1",  # Xdebug trigger
     "/index.php?XDEBUG_SESSION_START=1",
 ]

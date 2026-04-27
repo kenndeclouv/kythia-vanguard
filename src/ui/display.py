@@ -57,6 +57,7 @@ def display_score(result: ScanResult) -> None:
             title="[bold white]Overall Security Posture[/bold white]",
             border_style=colour,
             width=60,
+            expand=True,
             padding=(1, 4),
         )
     )

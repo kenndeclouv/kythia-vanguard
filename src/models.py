@@ -10,7 +10,6 @@ class ScanResult:
     target: str = ""
     timestamp: str = ""
 
-    # ── core modules
     whois: dict = field(default_factory=dict)
     subdomains: list = field(default_factory=list)
     dns_records: dict = field(default_factory=dict)
@@ -26,30 +25,37 @@ class ScanResult:
     graphql_findings: list = field(default_factory=list)
     sourcemap_findings: list = field(default_factory=list)
 
-    # ── v2: OSINT
     osint_breach: dict = field(default_factory=dict)  # HaveIBeenPwned results
     osint_asn: dict = field(default_factory=dict)  # ASN / BGP / IP range
     osint_wayback: list = field(default_factory=list)  # Old endpoints from Wayback
     osint_github: list = field(default_factory=list)  # GitHub dork queries
 
-    # ── v2: CVE Intelligence
     banners: dict = field(default_factory=dict)  # port → banner text
     cve_findings: list = field(
         default_factory=list
     )  # [{cve_id, cvss, desc, port, product}]
     cms_detected: dict = field(default_factory=dict)  # {cms: {version, confidence}}
 
-    # ── v2: Deep Crawler
     sitemap: list = field(default_factory=list)  # all internal URLs found
     js_endpoints: list = field(default_factory=list)  # hidden API endpoints from JS
     parameters: dict = field(default_factory=dict)  # url → [param, ...]
 
-    # ── v2: nuclei
     nuclei_findings: list = field(default_factory=list)
     nuclei_summary: dict = field(default_factory=dict)
 
-    # ── v3: new modules
     debug_findings: list = field(default_factory=list)  # Framework debug leaks
     infra_findings: list = field(default_factory=list)  # Docker/Redis/Infra exposure
     webhook_findings: list = field(default_factory=list)  # Discord/Telegram/Slack creds
     git_findings: dict = field(default_factory=dict)  # Exposed .git dump results
+
+    takeover_findings: list = field(default_factory=list)  # Subdomain takeover
+    js_secret_findings: list = field(default_factory=list)  # Deep JS secret hunt
+    cors_findings: list = field(default_factory=list)  # CORS misconfigurations
+    jwt_findings: list = field(default_factory=list)  # JWT decode + crack results
+    stress_findings: dict = field(default_factory=dict)  # Load test results
+    dos_findings: dict = field(default_factory=dict)  # Layer 7 DoS vulnerabilities
+    bruteforce_findings: dict = field(default_factory=dict)  # Login form brute-force
+    lfi_findings: list = field(default_factory=list)  # Path traversal / LFI
+    apisec_findings: list = field(default_factory=list)  # Exposed API docs
+    oauth_findings: list = field(default_factory=list)  # OAuth misconfigurations
+    brutal_mode: bool = False  # Set True to enable infinite 1000-VU brutal mode
