@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 class ScanResult:
     target: str = ""
     timestamp: str = ""
+    is_ip: bool = False
 
     whois: dict = field(default_factory=dict)
     subdomains: list = field(default_factory=list)

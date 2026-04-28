@@ -36,6 +36,10 @@ _CSRF_NORMALISED = {t.replace("-", "").replace("_", "") for t in CSRF_TOKEN_NAME
 
 
 def run_form_audit(target_url: str, result: ScanResult, progress, task) -> None:
+    if getattr(result, "is_ip", False):
+        progress.console.print(
+            f"  [{C['warn']}]⚠ Forms: Scanning direct IP! This may hit a virtual host default page.[/{C['warn']}]"
+        )
     progress.update(task, description="[cyan]Forms:[/cyan] Scraping HTML…")
     rate_limiter.wait()
 

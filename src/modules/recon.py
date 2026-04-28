@@ -18,8 +18,10 @@ def run_recon(
     # ── 1. WHOIS / RDAP
     progress.update(task, description="[cyan]Recon:[/cyan] RDAP / WHOIS lookup…")
     whois_data: dict = {}
+    is_ip = getattr(result, "is_ip", False)
     try:
-        r = SESSION.get(f"https://rdap.org/domain/{hostname}", timeout=TIMEOUT)
+        rdap_url = f"https://rdap.org/ip/{hostname}" if is_ip else f"https://rdap.org/domain/{hostname}"
+        r = SESSION.get(rdap_url, timeout=TIMEOUT)
         if r.ok:
             raw = r.json()
             whois_data["registrar"] = next(
@@ -56,32 +58,33 @@ def run_recon(
     )
     subdomains: set = set()
 
-    # Source A: crt.sh
-    try:
-        r_crt = SESSION.get(f"https://crt.sh/?q=%25.{hostname}&output=json", timeout=15)
-        if r_crt.ok:
-            for entry in r_crt.json():
-                names = entry.get("name_value", "").split("\n")
-                for name in names:
-                    name = name.strip().lower().lstrip("*.")
+    if not is_ip:
+        # Source A: crt.sh
+        try:
+            r_crt = SESSION.get(f"https://crt.sh/?q=%25.{hostname}&output=json", timeout=15)
+            if r_crt.ok:
+                for entry in r_crt.json():
+                    names = entry.get("name_value", "").split("\n")
+                    for name in names:
+                        name = name.strip().lower().lstrip("*.")
+                        if name.endswith(hostname) and name != hostname:
+                            subdomains.add(name)
+        except Exception:
+            pass  # Lanjut ke AlienVault kalau crt.sh down
+
+        # Source B: AlienVault OTX (Passive DNS)
+        try:
+            r_otx = SESSION.get(
+                f"https://otx.alienvault.com/api/v1/indicators/domain/{hostname}/passive_dns",
+                timeout=15,
+            )
+            if r_otx.ok:
+                for entry in r_otx.json().get("passive_dns", []):
+                    name = entry.get("hostname", "").strip().lower().lstrip("*.")
                     if name.endswith(hostname) and name != hostname:
                         subdomains.add(name)
-    except Exception:
-        pass  # Lanjut ke AlienVault kalau crt.sh down
-
-    # Source B: AlienVault OTX (Passive DNS)
-    try:
-        r_otx = SESSION.get(
-            f"https://otx.alienvault.com/api/v1/indicators/domain/{hostname}/passive_dns",
-            timeout=15,
-        )
-        if r_otx.ok:
-            for entry in r_otx.json().get("passive_dns", []):
-                name = entry.get("hostname", "").strip().lower().lstrip("*.")
-                if name.endswith(hostname) and name != hostname:
-                    subdomains.add(name)
-    except Exception:
-        pass
+        except Exception:
+            pass
 
     # Ambil top 100 subdomain biar nggak kepanjangan di UI
     result.subdomains = sorted(subdomains)[:100]
@@ -93,67 +96,70 @@ def run_recon(
     )
     dns_records: dict = {}
 
-    # Cek Standard Records
-    for rtype in ("A", "AAAA", "MX", "NS", "TXT", "SOA"):
+    if not is_ip:
+        # Cek Standard Records
+        for rtype in ("A", "AAAA", "MX", "NS", "TXT", "SOA"):
+            try:
+                rate_limiter.wait()
+                r = SESSION.get(
+                    "https://dns.google/resolve",
+                    params={"name": hostname, "type": rtype},
+                    timeout=TIMEOUT,
+                )
+                if r.ok:
+                    answers = r.json().get("Answer", [])
+                    dns_records[rtype] = [a.get("data", "").strip('"') for a in answers]
+            except Exception:
+                dns_records[rtype] = []
+
+        # Cek DMARC Record (Sangat penting buat pentest phishing)
         try:
-            rate_limiter.wait()
-            r = SESSION.get(
+            r_dmarc = SESSION.get(
                 "https://dns.google/resolve",
-                params={"name": hostname, "type": rtype},
+                params={"name": f"_dmarc.{hostname}", "type": "TXT"},
                 timeout=TIMEOUT,
             )
-            if r.ok:
-                answers = r.json().get("Answer", [])
-                dns_records[rtype] = [a.get("data", "").strip('"') for a in answers]
+            if r_dmarc.ok and r_dmarc.json().get("Answer"):
+                dns_records["DMARC"] = [
+                    a.get("data", "").strip('"') for a in r_dmarc.json().get("Answer")
+                ]
         except Exception:
-            dns_records[rtype] = []
-
-    # Cek DMARC Record (Sangat penting buat pentest phishing)
-    try:
-        r_dmarc = SESSION.get(
-            "https://dns.google/resolve",
-            params={"name": f"_dmarc.{hostname}", "type": "TXT"},
-            timeout=TIMEOUT,
-        )
-        if r_dmarc.ok and r_dmarc.json().get("Answer"):
-            dns_records["DMARC"] = [
-                a.get("data", "").strip('"') for a in r_dmarc.json().get("Answer")
-            ]
-    except Exception:
-        pass
+            pass
 
     result.dns_records = dns_records
 
-    # ── 3.5. FINGERPRINTING DARI DNS
-    # Identifikasi provider email & cek kerentanan spoofing
-    if dns_records.get("MX"):
-        mx_data = " ".join(dns_records["MX"]).lower()
-        if "google" in mx_data:
-            whois_data["email_provider"] = "Google Workspace"
-        elif "outlook" in mx_data:
-            whois_data["email_provider"] = "Microsoft 365"
-        elif "zoho" in mx_data:
-            whois_data["email_provider"] = "Zoho Mail"
-        elif "titan" in mx_data:
-            whois_data["email_provider"] = "Titan Mail (Hostinger)"
-        else:
-            whois_data["email_provider"] = "Custom / Other"
+    if not is_ip:
+        # ── 3.5. FINGERPRINTING DARI DNS
+        # Identifikasi provider email & cek kerentanan spoofing
+        if dns_records.get("MX"):
+            mx_data = " ".join(dns_records["MX"]).lower()
+            if "google" in mx_data:
+                whois_data["email_provider"] = "Google Workspace"
+            elif "outlook" in mx_data:
+                whois_data["email_provider"] = "Microsoft 365"
+            elif "zoho" in mx_data:
+                whois_data["email_provider"] = "Zoho Mail"
+            elif "titan" in mx_data:
+                whois_data["email_provider"] = "Titan Mail (Hostinger)"
+            else:
+                whois_data["email_provider"] = "Custom / Other"
 
-    # Cek kerentanan Email Spoofing (SPF)
-    spf_found = any("v=spf1" in txt for txt in dns_records.get("TXT", []))
-    whois_data["spoofing_protection"] = (
-        "✓ Secured (SPF Found)" if spf_found else "⚠ Vulnerable (No SPF Record)"
-    )
+        # Cek kerentanan Email Spoofing (SPF)
+        spf_found = any("v=spf1" in txt for txt in dns_records.get("TXT", []))
+        whois_data["spoofing_protection"] = (
+            "✓ Secured (SPF Found)" if spf_found else "⚠ Vulnerable (No SPF Record)"
+        )
 
     progress.advance(task, 15)
 
     # ── 4. IP GEOLOCATION
     progress.update(task, description="[cyan]Recon:[/cyan] IP geolocation…")
     a_records = dns_records.get("A", [])
-    if a_records:
+    ip_to_check = hostname if is_ip else (a_records[0] if a_records else None)
+    if ip_to_check:
         try:
             r = SESSION.get(
-                f"http://ip-api.com/json/{a_records[0]}"
+                f"http://ip-api.com/json/{ip_to_check}"
                 f"?fields=country,regionName,city,isp,org,as",
                 timeout=TIMEOUT,
             )

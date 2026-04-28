@@ -234,6 +234,15 @@ def _probe(subdomain: str, base_hostname: str) -> dict | None:
 
 def run_takeover(hostname: str, result: ScanResult, progress, task) -> None:
     """Check all discovered subdomains for dangling CNAME takeover windows."""
+    if getattr(result, "is_ip", False):
+        progress.update(
+            task,
+            description="[cyan]Takeover:[/cyan] Target is an IP. Subdomain takeover not applicable.",
+            completed=50,
+        )
+        result.takeover_findings = []
+        return
+
     subdomains: list[str] = getattr(result, "subdomains", []) or []
     if not subdomains:
         progress.update(

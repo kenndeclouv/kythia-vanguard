@@ -348,6 +348,11 @@ def run_spider(
         description=f"[cyan]Spider:[/cyan] Launching pipeline ({_MAX_WORKERS} workers, {_SPIDER_RPS:.0f} RPS)…",
     )
 
+    if getattr(result, "is_ip", False):
+        progress.console.print(
+            f"  [{C['warn']}]⚠ Spider: Scanning direct IP! This may hit a virtual host default page.[/{C['warn']}]"
+        )
+
     def _handle_result(fut: Future) -> None:
         """Callback: process result and enqueue newly discovered URLs."""
         nonlocal queued

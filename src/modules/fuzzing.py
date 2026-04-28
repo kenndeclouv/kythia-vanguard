@@ -101,6 +101,10 @@ def _fuzz_single(base_url: str, path: str, progress) -> Optional[dict]:
 
 
 def run_fuzzing(target_url: str, result: ScanResult, progress, task) -> None:
+    if getattr(result, "is_ip", False):
+        progress.console.print(
+            f"  [{C['warn']}]⚠ Fuzzing: Scanning direct IP! This may hit a virtual host default page.[/{C['warn']}]"
+        )
     findings: list[dict] = []
     total = len(FUZZ_WORDLIST)
 

@@ -43,52 +43,55 @@ def run_osint(
     )
     breach_info: dict = {"domain_breach": [], "checked_emails": [], "api_note": ""}
 
-    try:
-        headers_hibp = {"User-Agent": "kythia-vanguard/1.0.0-rc.1"}
-        if HIBP_API_KEY:
-            headers_hibp["hibp-api-key"] = HIBP_API_KEY
-
-        r = SESSION.get(
-            "https://haveibeenpwned.com/api/v3/breaches",
-            headers=headers_hibp,
-            timeout=TIMEOUT,
-        )
-        if r.ok:
-            all_breaches = r.json()
-            breach_info["total_known_breaches"] = len(all_breaches)
-            breach_info["api_note"] = (
-                "Full per-domain email lookup requires HIBP API key (set HIBP_API_KEY env var). "
-                "Showing global breach stats only."
-                if not HIBP_API_KEY
-                else "API key present — per-email lookup enabled."
-            )
-
+    if getattr(result, "is_ip", False):
+        breach_info["api_note"] = "Target is an IP. HIBP domain breach lookup skipped."
+    else:
+        try:
+            headers_hibp = {"User-Agent": "kythia-vanguard/1.0.0-rc.1"}
             if HIBP_API_KEY:
-                checked = []
-                for email in _extract_domain_emails(hostname):
-                    try:
-                        er = SESSION.get(
-                            f"https://haveibeenpwned.com/api/v3/breachedaccount/{email}",
-                            headers=headers_hibp,
-                            timeout=TIMEOUT,
-                        )
-                        if er.status_code == 200:
-                            checked.append(
-                                {
-                                    "email": email,
-                                    "breaches": [b["Name"] for b in er.json()],
-                                    "pwned": True,
-                                }
+                headers_hibp["hibp-api-key"] = HIBP_API_KEY
+
+            r = SESSION.get(
+                "https://haveibeenpwned.com/api/v3/breaches",
+                headers=headers_hibp,
+                timeout=TIMEOUT,
+            )
+            if r.ok:
+                all_breaches = r.json()
+                breach_info["total_known_breaches"] = len(all_breaches)
+                breach_info["api_note"] = (
+                    "Full per-domain email lookup requires HIBP API key (set HIBP_API_KEY env var). "
+                    "Showing global breach stats only."
+                    if not HIBP_API_KEY
+                    else "API key present — per-email lookup enabled."
+                )
+
+                if HIBP_API_KEY:
+                    checked = []
+                    for email in _extract_domain_emails(hostname):
+                        try:
+                            er = SESSION.get(
+                                f"https://haveibeenpwned.com/api/v3/breachedaccount/{email}",
+                                headers=headers_hibp,
+                                timeout=TIMEOUT,
                             )
-                        elif er.status_code == 404:
-                            checked.append(
-                                {"email": email, "breaches": [], "pwned": False}
-                            )
-                    except Exception:
-                        pass
-                breach_info["checked_emails"] = checked
-    except Exception as e:
-        breach_info["error"] = str(e)
+                            if er.status_code == 200:
+                                checked.append(
+                                    {
+                                        "email": email,
+                                        "breaches": [b["Name"] for b in er.json()],
+                                        "pwned": True,
+                                    }
+                                )
+                            elif er.status_code == 404:
+                                checked.append(
+                                    {"email": email, "breaches": [], "pwned": False}
+                                )
+                        except Exception:
+                            pass
+                    breach_info["checked_emails"] = checked
+        except Exception as e:
+            breach_info["error"] = str(e)
 
     result.osint_breach = breach_info
     progress.advance(task, 15)
@@ -208,26 +211,27 @@ def run_osint(
         "Shopify": "Sorry, this shop is currently unavailable.",
     }
 
-    # Ambil max 30 subdo biar ga kelamaan (fokus ke yang dipanen OTX/crt.sh)
-    for sub in result.subdomains[:30]:
-        try:
-            tr = SESSION.get(f"http://{sub}", timeout=3)
-            for provider, sig in TAKEOVER_SIGS.items():
-                if sig in tr.text:
-                    from rich.panel import Panel
+    if not getattr(result, "is_ip", False):
+        # Ambil max 30 subdo biar ga kelamaan (fokus ke yang dipanen OTX/crt.sh)
+        for sub in result.subdomains[:30]:
+            try:
+                tr = SESSION.get(f"http://{sub}", timeout=3)
+                for provider, sig in TAKEOVER_SIGS.items():
+                    if sig in tr.text:
+                        from rich.panel import Panel
 
-                    progress.console.print(
-                        Panel(
-                            f"[bold red]SUBDOMAIN TAKEOVER VULNERABILITY![/bold red]\n"
-                            f"Target   : [cyan]{sub}[/cyan]\n"
-                            f"Provider : [yellow]{provider}[/yellow]\n"
-                            f"Impact   : You can hijack this subdomain and host your own content!",
-                            title="SUBDOMAIN TAKEOVER SCANNER",
-                            border_style="red",
+                        progress.console.print(
+                            Panel(
+                                f"[bold red]SUBDOMAIN TAKEOVER VULNERABILITY![/bold red]\n"
+                                f"Target   : [cyan]{sub}[/cyan]\n"
+                                f"Provider : [yellow]{provider}[/yellow]\n"
+                                f"Impact   : You can hijack this subdomain and host your own content!",
+                                title="SUBDOMAIN TAKEOVER SCANNER",
+                                border_style="red",
+                            )
                         )
-                    )
-        except Exception:
-            pass
+            except Exception:
+                pass
 
     progress.advance(task, 5)
     score_and_report(result, "osint")

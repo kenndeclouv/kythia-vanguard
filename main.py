@@ -155,6 +155,10 @@ def normalise_target(raw: str) -> tuple[str, str]:
     parsed = urllib.parse.urlparse(raw)
     return raw, parsed.hostname or raw
 
+def is_ip_address(host: str) -> bool:
+    import re
+    return bool(re.match(r"^\d{1,3}(\.\d{1,3}){3}$", host))
+
 
 # ─────────────────────────────────────────────────────────────────
 # Scan orchestrator (The Autoload)
@@ -166,13 +170,16 @@ def run_scan(target_raw: str, modules_selected: list[str]) -> None:
 
     result = ScanResult()
     result.target = target_url
+    result.is_ip = is_ip_address(hostname)
     result.timestamp = datetime.datetime.now().isoformat()
+
+    ip_label = " [yellow](Direct IP)[/yellow]" if result.is_ip else ""
 
     console.print()
     console.print(
         Panel(
             f"[bold white]Target :[/bold white] [cyan]{target_url}[/cyan]\n"
-            f"[bold white]Host   :[/bold white] [cyan]{hostname}[/cyan]\n"
+            f"[bold white]Host   :[/bold white] [cyan]{hostname}[/cyan]{ip_label}\n"
             f"[bold white]Modules:[/bold white] [yellow]{', '.join(modules_selected)}[/yellow]",
             title="[bold magenta]Scan Configuration[/bold magenta]",
             border_style="magenta",
